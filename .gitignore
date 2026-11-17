@@ -13,6 +13,7 @@ __pycache__/
 
 # Local cache and temporary runtime data
 cache/
+logs/
 data/*.json
 !data/.gitkeep
 
