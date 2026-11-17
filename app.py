@@ -21,7 +21,11 @@ from confluence_strategy import ConfluenceStrategy
 from chart_plotter import ChartPlotter
 from order_manager import OrderManager
 from token_manager import TokenManager
-from angel_chart_mirror import render_angel_one_mirror, render_angel_one_smartapi_chart
+from angel_chart_mirror import (
+    render_angel_one_mirror,
+    render_angel_one_smartapi_chart,
+    render_tradingview_confluence_chart
+)
 
 # Page Config
 st.set_page_config(
@@ -403,22 +407,49 @@ with tab_chart:
         else:
             render_angel_one_mirror(symbol=selected_symbol, interval=chart_tf, height=640)
     elif "AI Confluence" in chart_view_mode:
-        # Single Focused Full-Width Chart with S/R, CPR, and Trade Box
+        # AI Confluence Setup with Auto-Levels & Trade Box on TradingView Engine
+        confluence_engine_col1, confluence_engine_col2 = st.columns([3, 1])
+        with confluence_engine_col1:
+            confluence_renderer = st.radio(
+                "Confluence Chart Engine:",
+                ["⚡ TradingView Engine (Angel One SmartAPI Feed • Recommended)", "📊 Plotly Classic Engine"],
+                horizontal=True,
+                index=0
+            )
+        with confluence_engine_col2:
+            st.write("")
+            st.caption("Active Overlays: S/R, CPR, PDH/PDL, Open, Trade Box")
+
         if mtf_data and chart_tf in mtf_data:
             chart_df = mtf_data[chart_tf]
-            fig = ChartPlotter.create_trade_chart(
-                df=chart_df,
-                trade_plan=plan,
-                timeframe=chart_tf,
-                show_sr=show_sr,
-                show_cpr=show_cpr,
-                show_pdh_pdl=show_pdh_pdl,
-                show_fvg=show_fvg,
-                show_trade_overlay=show_trade_overlay,
-                height=580,
-                is_grid_compact=False
-            )
-            st.plotly_chart(fig, use_container_width=True, config=plotly_config)
+            if "TradingView" in confluence_renderer:
+                render_tradingview_confluence_chart(
+                    df=chart_df,
+                    symbol=selected_symbol,
+                    interval=chart_tf,
+                    trade_plan=plan,
+                    show_sr=show_sr,
+                    show_cpr=show_cpr,
+                    show_pdh_pdl=show_pdh_pdl,
+                    show_trade_overlay=show_trade_overlay,
+                    height=640
+                )
+            else:
+                fig = ChartPlotter.create_trade_chart(
+                    df=chart_df,
+                    trade_plan=plan,
+                    timeframe=chart_tf,
+                    show_sr=show_sr,
+                    show_cpr=show_cpr,
+                    show_pdh_pdl=show_pdh_pdl,
+                    show_fvg=show_fvg,
+                    show_trade_overlay=show_trade_overlay,
+                    height=580,
+                    is_grid_compact=False
+                )
+                st.plotly_chart(fig, use_container_width=True, config=plotly_config)
+        else:
+            st.info("Loading Angel One live candle stream for AI Confluence...")
     else:
         # Quad 2x2 Confluence Grid View (Angel One Multi-Chart Style)
         st.caption("Synchronized Multi-Timeframe Confluence Grid • Visualizing Macro (1h) down to Micro Trigger (1m)")

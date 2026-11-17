@@ -3,14 +3,15 @@ Angel One 1:1 Live Chart Mirror.
 Powered by TradingView's official charting engines (Lightweight Charts & Advanced Widget).
 Directly ingests candles from Angel One SmartAPI to completely bypass TradingView's
 external symbol licensing restrictions ("This symbol is available only on TradingView").
+Includes AI Confluence Auto-Levels (S/R, CPR, PDH/PDL, Today's Open) and Trade Box (Entry/SL/Targets).
 """
 import json
 import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 
-# Mapping Indian symbols to TradingView NSE tickers
+# Mapping Indian symbols to TradingView NSE tickers (for Cloud widget fallback)
 TV_SYMBOL_MAP = {
     "NIFTY": "CAPITALCOM:INDIA50",  # Unrestricted 1:1 Nifty 50 tracker on TradingView
     "BANKNIFTY": "NSE:BANKNIFTY",
@@ -34,19 +35,22 @@ TV_INTERVAL_MAP = {
 }
 
 
-def render_angel_one_smartapi_chart(
+def render_tradingview_confluence_chart(
     df: pd.DataFrame,
     symbol: str = "NIFTY",
     interval: str = "5m",
     trade_plan: Optional[Dict[str, Any]] = None,
+    show_sr: bool = True,
+    show_cpr: bool = True,
+    show_pdh_pdl: bool = True,
+    show_trade_overlay: bool = True,
     height: int = 650
 ):
     """
-    Renders an authentic, unrestricted Angel One chart using TradingView's official 
-    Lightweight Charts engine (v4.1) powered directly by Angel One SmartAPI candles.
-    
-    Zero 'Available only on TradingView' restrictions, full crosshairs, mouse zoom/pan,
-    volume bars, and automated Entry / SL / Target price lines.
+    Renders the AI Confluence Setup chart using the native TradingView Engine (Lightweight Charts v4.1).
+    Powered by genuine Angel One SmartAPI data with Zero symbol restrictions.
+    Displays automated Support/Resistance zones, CPR, PDH/PDL, Today's Open,
+    and Trade Box (Entry, Stop Loss, Target 1, Target 2, Target 3, Risk-to-Reward).
     """
     if df is None or df.empty:
         st.warning(f"No candle data available from Angel One for {symbol} ({interval}).")
@@ -95,19 +99,201 @@ def render_angel_one_smartapi_chart(
     pct = (chg / prev_close) * 100 if prev_close else 0.0
     chg_color = "#089981" if chg >= 0 else "#F23645"
 
-    # Extract Trade Plan Levels
-    entry_price = 0.0
-    stop_loss = 0.0
-    target_1 = 0.0
-    target_2 = 0.0
+    # Compile Price Lines and Markers from Trade Plan & Overlays
+    price_lines: List[Dict[str, Any]] = []
+    markers: List[Dict[str, Any]] = []
+    signal_text = "WAIT / NEUTRAL"
+    signal_color = "#FFD600"
+    rrr_text = "1:2"
+
     if trade_plan:
-        entry_price = float(trade_plan.get("entry_price", 0.0))
-        stop_loss = float(trade_plan.get("stop_loss", 0.0))
-        target_1 = float(trade_plan.get("target_1", 0.0))
-        target_2 = float(trade_plan.get("target_2", 0.0))
+        direction = trade_plan.get("direction", "NEUTRAL")
+        signal = trade_plan.get("signal", "WAIT")
+        score = trade_plan.get("confluence_score", 0)
+        rrr_text = trade_plan.get("risk_reward_ratio", "1:2")
+
+        if direction == "BUY":
+            signal_text = f"🚀 {signal} • Score {score}/100"
+            signal_color = "#00C853"
+        elif direction == "SELL":
+            signal_text = f"🔻 {signal} • Score {score}/100"
+            signal_color = "#FF1744"
+        else:
+            signal_text = f"⏳ {signal} • Score {score}/100"
+            signal_color = "#FFD600"
+
+        entry_p = float(trade_plan.get("entry_price", 0.0))
+        sl_p = float(trade_plan.get("stop_loss", 0.0))
+        t1_p = float(trade_plan.get("target_1", 0.0))
+        t2_p = float(trade_plan.get("target_2", 0.0))
+        t3_p = float(trade_plan.get("target_3", 0.0))
+        risk_pts = float(trade_plan.get("risk_points", 0.0))
+
+        # 1. Trade Box Price Lines (Entry, SL, Targets)
+        if show_trade_overlay and entry_p > 0:
+            price_lines.append({
+                "price": entry_p,
+                "color": "#00E5FF",
+                "lineWidth": 2,
+                "lineStyle": 0,  # Solid
+                "axisLabelVisible": True,
+                "title": f"ENTRY: ₹{entry_p:,.1f}"
+            })
+            if sl_p > 0:
+                price_lines.append({
+                    "price": sl_p,
+                    "color": "#FF1744",
+                    "lineWidth": 2,
+                    "lineStyle": 2,  # Dashed
+                    "axisLabelVisible": True,
+                    "title": f"STOP LOSS: ₹{sl_p:,.1f} (-{risk_pts:.1f} pts)"
+                })
+            if t1_p > 0:
+                price_lines.append({
+                    "price": t1_p,
+                    "color": "#00E676",
+                    "lineWidth": 2,
+                    "lineStyle": 2,  # Dashed
+                    "axisLabelVisible": True,
+                    "title": f"TARGET 1 (1:1.5): ₹{t1_p:,.1f}"
+                })
+            if t2_p > 0:
+                price_lines.append({
+                    "price": t2_p,
+                    "color": "#00C853",
+                    "lineWidth": 2,
+                    "lineStyle": 2,  # Dashed
+                    "axisLabelVisible": True,
+                    "title": f"TARGET 2 (1:2.5): ₹{t2_p:,.1f}"
+                })
+            if t3_p > 0:
+                price_lines.append({
+                    "price": t3_p,
+                    "color": "#1DE9B6",
+                    "lineWidth": 1,
+                    "lineStyle": 2,  # Dashed
+                    "axisLabelVisible": True,
+                    "title": f"TARGET 3: ₹{t3_p:,.1f}"
+                })
+
+            # Signal Arrow Marker on Latest Candle
+            if candle_records and direction in ("BUY", "SELL"):
+                last_time = candle_records[-1]["time"]
+                if direction == "BUY":
+                    markers.append({
+                        "time": last_time,
+                        "position": "belowBar",
+                        "color": "#00E676",
+                        "shape": "arrowUp",
+                        "text": f"BUY ENTRY @ ₹{entry_p:,.1f}"
+                    })
+                else:
+                    markers.append({
+                        "time": last_time,
+                        "position": "aboveBar",
+                        "color": "#FF1744",
+                        "shape": "arrowDown",
+                        "text": f"SELL ENTRY @ ₹{entry_p:,.1f}"
+                    })
+
+        # 2. Central Pivot Range (CPR)
+        if show_cpr and "cpr" in trade_plan and trade_plan["cpr"]:
+            cpr_data = trade_plan["cpr"]
+            pivot = float(cpr_data.get("pivot", 0.0))
+            tc = float(cpr_data.get("tc", 0.0))
+            bc = float(cpr_data.get("bc", 0.0))
+            if pivot > 0:
+                price_lines.append({
+                    "price": pivot,
+                    "color": "#E040FB",
+                    "lineWidth": 1,
+                    "lineStyle": 1,  # Dotted
+                    "axisLabelVisible": True,
+                    "title": f"CPR PIVOT: ₹{pivot:,.1f}"
+                })
+            if tc > 0:
+                price_lines.append({
+                    "price": tc,
+                    "color": "#BA68C8",
+                    "lineWidth": 1,
+                    "lineStyle": 1,
+                    "axisLabelVisible": True,
+                    "title": f"CPR TC: ₹{tc:,.1f}"
+                })
+            if bc > 0:
+                price_lines.append({
+                    "price": bc,
+                    "color": "#BA68C8",
+                    "lineWidth": 1,
+                    "lineStyle": 1,
+                    "axisLabelVisible": True,
+                    "title": f"CPR BC: ₹{bc:,.1f}"
+                })
+
+        # 3. Key Daily Extremes (PDH, PDL, Today's Open)
+        if show_pdh_pdl and "pdh_pdl" in trade_plan and trade_plan["pdh_pdl"]:
+            pdh_dict = trade_plan["pdh_pdl"]
+            pdh = float(pdh_dict.get("pdh", 0.0))
+            pdl = float(pdh_dict.get("pdl", 0.0))
+            topen = float(pdh_dict.get("today_open", 0.0))
+            if pdh > 0:
+                price_lines.append({
+                    "price": pdh,
+                    "color": "#FF5252",
+                    "lineWidth": 1,
+                    "lineStyle": 1,
+                    "axisLabelVisible": True,
+                    "title": f"PDH: ₹{pdh:,.1f}"
+                })
+            if pdl > 0:
+                price_lines.append({
+                    "price": pdl,
+                    "color": "#69F0AE",
+                    "lineWidth": 1,
+                    "lineStyle": 1,
+                    "axisLabelVisible": True,
+                    "title": f"PDL: ₹{pdl:,.1f}"
+                })
+            if topen > 0:
+                price_lines.append({
+                    "price": topen,
+                    "color": "#FFD700",
+                    "lineWidth": 1,
+                    "lineStyle": 1,
+                    "axisLabelVisible": True,
+                    "title": f"OPEN: ₹{topen:,.1f}"
+                })
+
+        # 4. Support & Resistance Zones
+        if show_sr and "sr_zones" in trade_plan and trade_plan["sr_zones"]:
+            sr = trade_plan["sr_zones"]
+            for r in sr.get("resistances", [])[:2]:
+                lvl = float(r.get("level", 0.0))
+                if lvl > 0:
+                    price_lines.append({
+                        "price": lvl,
+                        "color": "#EF5350",
+                        "lineWidth": 1,
+                        "lineStyle": 1,
+                        "axisLabelVisible": True,
+                        "title": f"RES: ₹{lvl:,.1f}"
+                    })
+            for s in sr.get("supports", [])[:2]:
+                lvl = float(s.get("level", 0.0))
+                if lvl > 0:
+                    price_lines.append({
+                        "price": lvl,
+                        "color": "#26A69A",
+                        "lineWidth": 1,
+                        "lineStyle": 1,
+                        "axisLabelVisible": True,
+                        "title": f"SUPP: ₹{lvl:,.1f}"
+                    })
 
     candles_json = json.dumps(candle_records)
     volumes_json = json.dumps(volume_records)
+    price_lines_json = json.dumps(price_lines)
+    markers_json = json.dumps(markers)
 
     html_code = f"""
     <!DOCTYPE html>
@@ -115,7 +301,7 @@ def render_angel_one_smartapi_chart(
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Angel One SmartAPI Live Chart</title>
+        <title>Angel One AI Confluence Chart</title>
         <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
         <style>
             * {{ box-sizing: border-box; }}
@@ -133,7 +319,7 @@ def render_angel_one_smartapi_chart(
                 display: flex;
                 align-items: center;
                 justify-content: space-between;
-                height: 42px;
+                height: 44px;
                 padding: 0 16px;
                 background-color: #1E222D;
                 border-bottom: 1px solid #2B2B43;
@@ -150,10 +336,11 @@ def render_angel_one_smartapi_chart(
             .badge-sym {{ background: #2962FF; color: white; }}
             .badge-tf {{ background: #2A2E39; color: #ECEFF1; border: 1px solid #434651; }}
             .badge-angel {{ background: #00E5FF; color: #0E1117; }}
+            .badge-signal {{ background: rgba(0, 200, 83, 0.15); border: 1px solid {signal_color}; color: {signal_color}; }}
             .price-tag {{ font-size: 15px; font-weight: bold; }}
             #chart-container {{
                 width: 100%;
-                height: calc(100% - 42px);
+                height: calc(100% - 44px);
                 position: relative;
             }}
             #legend {{
@@ -162,11 +349,12 @@ def render_angel_one_smartapi_chart(
                 left: 14px;
                 z-index: 10;
                 font-size: 12px;
-                background: rgba(19, 23, 34, 0.75);
-                padding: 6px 10px;
+                background: rgba(19, 23, 34, 0.85);
+                padding: 6px 12px;
                 border-radius: 6px;
                 border: 1px solid #2B2B43;
                 pointer-events: none;
+                backdrop-filter: blur(4px);
             }}
         </style>
     </head>
@@ -176,12 +364,16 @@ def render_angel_one_smartapi_chart(
                 <span class="badge badge-sym">{symbol}</span>
                 <span class="badge badge-tf">{interval}</span>
                 <span class="badge badge-angel">⚡ Angel One SmartAPI Feed</span>
+                <span class="badge badge-signal">{signal_text}</span>
             </div>
-            <div>
-                <span class="price-tag" style="color: {chg_color};">₹ {latest_close:,.2f}</span>
-                <span style="font-size: 12px; color: {chg_color}; margin-left: 6px;">
-                    {'+' if chg >= 0 else ''}{chg:.2f} ({'+' if pct >= 0 else ''}{pct:.2f}%)
-                </span>
+            <div style="display: flex; align-items: center; gap: 12px;">
+                <span style="font-size: 12px; color: #8B949E;">RR: <strong style="color: #00E5FF;">{rrr_text}</strong></span>
+                <div>
+                    <span class="price-tag" style="color: {chg_color};">₹ {latest_close:,.2f}</span>
+                    <span style="font-size: 12px; color: {chg_color}; margin-left: 6px;">
+                        {'+' if chg >= 0 else ''}{chg:.2f} ({'+' if pct >= 0 else ''}{pct:.2f}%)
+                    </span>
+                </div>
             </div>
         </div>
 
@@ -250,57 +442,26 @@ def render_angel_one_smartapi_chart(
             }});
             volumeSeries.setData(volumeData);
 
-            // Add Automated AI Confluence Trade Price Lines
-            const entryPrice = {entry_price};
-            const stopLoss = {stop_loss};
-            const target1 = {target_1};
-            const target2 = {target_2};
-
-            if (entryPrice > 0) {{
+            // Add Dynamic AI Confluence & Trade Box Price Lines
+            const priceLines = {price_lines_json};
+            priceLines.forEach(pl => {{
                 candleSeries.createPriceLine({{
-                    price: entryPrice,
-                    color: '#00E5FF',
-                    lineWidth: 2,
-                    lineStyle: LightweightCharts.LineStyle.Solid,
-                    axisLabelVisible: true,
-                    title: 'ENTRY (TAKE TRADE)',
+                    price: pl.price,
+                    color: pl.color,
+                    lineWidth: pl.lineWidth,
+                    lineStyle: pl.lineStyle,
+                    axisLabelVisible: pl.axisLabelVisible,
+                    title: pl.title,
                 }});
+            }});
+
+            // Add Signal Arrow Markers
+            const markers = {markers_json};
+            if (markers.length > 0) {{
+                candleSeries.setMarkers(markers);
             }}
 
-            if (stopLoss > 0) {{
-                candleSeries.createPriceLine({{
-                    price: stopLoss,
-                    color: '#F23645',
-                    lineWidth: 2,
-                    lineStyle: LightweightCharts.LineStyle.Dashed,
-                    axisLabelVisible: true,
-                    title: 'STOP LOSS',
-                }});
-            }}
-
-            if (target1 > 0) {{
-                candleSeries.createPriceLine({{
-                    price: target1,
-                    color: '#089981',
-                    lineWidth: 2,
-                    lineStyle: LightweightCharts.LineStyle.Dashed,
-                    axisLabelVisible: true,
-                    title: 'TARGET 1 (1:1.5)',
-                }});
-            }}
-
-            if (target2 > 0) {{
-                candleSeries.createPriceLine({{
-                    price: target2,
-                    color: '#00E676',
-                    lineWidth: 2,
-                    lineStyle: LightweightCharts.LineStyle.Dashed,
-                    axisLabelVisible: true,
-                    title: 'TARGET 2 (1:2.5)',
-                }});
-            }}
-
-            // Legend Dynamic Crosshair Update
+            // Dynamic Crosshair Legend Update
             const ohlcText = document.getElementById('ohlc-text');
             chart.subscribeCrosshairMove(param => {{
                 if (!param || !param.time || !param.seriesData.get(candleSeries)) {{
@@ -326,6 +487,29 @@ def render_angel_one_smartapi_chart(
     </html>
     """
     components.html(html_code, height=height, scrolling=False)
+
+
+def render_angel_one_smartapi_chart(
+    df: pd.DataFrame,
+    symbol: str = "NIFTY",
+    interval: str = "5m",
+    trade_plan: Optional[Dict[str, Any]] = None,
+    height: int = 650
+):
+    """
+    Renders pure Angel One SmartAPI chart with Trade Box.
+    """
+    render_tradingview_confluence_chart(
+        df=df,
+        symbol=symbol,
+        interval=interval,
+        trade_plan=trade_plan,
+        show_sr=False,
+        show_cpr=False,
+        show_pdh_pdl=False,
+        show_trade_overlay=True,
+        height=height
+    )
 
 
 def render_angel_one_mirror(symbol: str = "NIFTY", interval: str = "5m", height: int = 640):
