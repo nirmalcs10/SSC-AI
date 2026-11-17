@@ -66,6 +66,40 @@ st.markdown("""
         margin-top: 15px;
         margin-bottom: 20px;
     }
+    .full-digit-card {
+        background-color: #161B22;
+        border: 1px solid #30363D;
+        border-radius: 8px;
+        padding: 12px 14px;
+        min-width: 150px;
+        text-align: left;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.25);
+    }
+    .digit-title {
+        font-size: 11px;
+        color: #8B949E;
+        margin-bottom: 4px;
+        white-space: nowrap;
+        overflow: visible;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        font-weight: 600;
+    }
+    .digit-value {
+        font-size: 21px;
+        font-weight: 700;
+        white-space: nowrap;
+        overflow: visible;
+        letter-spacing: -0.3px;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    }
+    .digit-sub {
+        font-size: 11px;
+        font-weight: 600;
+        margin-top: 4px;
+        white-space: nowrap;
+        overflow: visible;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -285,36 +319,120 @@ if plan:
     </div>
     """, unsafe_allow_html=True)
 
-    # Key Trade Metrics Columns
+    entry_p = float(plan.get("entry_price", 0.0))
+    sl_p = float(plan.get("stop_loss", 0.0))
+    risk_pts = float(plan.get("risk_points", 0.0))
+    t1_p = float(plan.get("target_1", 0.0))
+    t2_p = float(plan.get("target_2", 0.0))
+    t3_p = float(plan.get("target_3", 0.0))
+    rrr_str = plan.get("risk_reward_ratio", "1:2")
+
+    t1_gain = round(t1_p - entry_p, 2) if direction == "BUY" else round(entry_p - t1_p, 2)
+    t2_gain = round(t2_p - entry_p, 2) if direction == "BUY" else round(entry_p - t2_p, 2)
+    t3_gain = round(t3_p - entry_p, 2) if direction == "BUY" else round(entry_p - t3_p, 2)
+
+    # Key Trade Metrics Columns with Full Untruncated Digits
     m_col1, m_col2, m_col3, m_col4, m_col5, m_col6 = st.columns(6)
     with m_col1:
-        st.metric("Take Trade Price (Entry)", f"₹ {plan.get('entry_price', 0.0):,.2f}")
+        st.markdown(f"""
+        <div class="full-digit-card">
+            <div class="digit-title">Take Trade Price (Entry)</div>
+            <div class="digit-value" style="color: #00E5FF;">₹ {entry_p:,.2f}</div>
+            <div class="digit-sub" style="color: #8B949E;">Exact Trigger Level</div>
+        </div>
+        """, unsafe_allow_html=True)
     with m_col2:
-        st.metric("Stop Loss (SL)", f"₹ {plan.get('stop_loss', 0.0):,.2f}", delta=f"-{plan.get('risk_points', 0.0)} pts", delta_color="inverse")
+        st.markdown(f"""
+        <div class="full-digit-card">
+            <div class="digit-title">Stop Loss (SL)</div>
+            <div class="digit-value" style="color: #FF1744;">₹ {sl_p:,.2f}</div>
+            <div class="digit-sub" style="color: #FF5252;">Risk: -{risk_pts:,.2f} pts</div>
+        </div>
+        """, unsafe_allow_html=True)
     with m_col3:
-        st.metric("Target 1 (1:1.5 RR)", f"₹ {plan.get('target_1', 0.0):,.2f}")
+        st.markdown(f"""
+        <div class="full-digit-card">
+            <div class="digit-title">Target 1 (1:1.5 RR)</div>
+            <div class="digit-value" style="color: #00E676;">₹ {t1_p:,.2f}</div>
+            <div class="digit-sub" style="color: #69F0AE;">Reward: +{t1_gain:,.2f} pts</div>
+        </div>
+        """, unsafe_allow_html=True)
     with m_col4:
-        st.metric("Target 2 (1:2.5 RR)", f"₹ {plan.get('target_2', 0.0):,.2f}")
+        st.markdown(f"""
+        <div class="full-digit-card">
+            <div class="digit-title">Target 2 (1:2.5 RR)</div>
+            <div class="digit-value" style="color: #00C853;">₹ {t2_p:,.2f}</div>
+            <div class="digit-sub" style="color: #B9F6CA;">Reward: +{t2_gain:,.2f} pts</div>
+        </div>
+        """, unsafe_allow_html=True)
     with m_col5:
-        st.metric("Target 3 (Major S/R)", f"₹ {plan.get('target_3', 0.0):,.2f}")
+        st.markdown(f"""
+        <div class="full-digit-card">
+            <div class="digit-title">Target 3 (Major S/R)</div>
+            <div class="digit-value" style="color: #1DE9B6;">₹ {t3_p:,.2f}</div>
+            <div class="digit-sub" style="color: #A7FFEB;">Reward: +{t3_gain:,.2f} pts</div>
+        </div>
+        """, unsafe_allow_html=True)
     with m_col6:
-        st.metric("Risk-Reward Ratio", plan.get("risk_reward_ratio", "1:2"))
+        st.markdown(f"""
+        <div class="full-digit-card">
+            <div class="digit-title">Risk-Reward Ratio</div>
+            <div class="digit-value" style="color: #FFD600;">{rrr_str}</div>
+            <div class="digit-sub" style="color: #FFE57F;">Confluence Verified</div>
+        </div>
+        """, unsafe_allow_html=True)
 
-    # F&O Options Recommendation Box (for Index Trading)
+    # F&O Options Recommendation Box with Full Untruncated Digits
     fno = plan.get("fno_recommendation")
     if fno:
         st.markdown("### 🎯 F&O Option Strike & Premium Trade Recommendation")
+        opt_prem = float(fno.get("approx_premium", 0.0))
+        opt_sl = float(fno.get("option_stop_loss", 0.0))
+        opt_t1 = float(fno.get("option_target_1", 0.0))
+        opt_t2 = float(fno.get("option_target_2", 0.0))
+        f_lot_size = fno.get("lot_size", 65)
+
         f_col1, f_col2, f_col3, f_col4, f_col5 = st.columns(5)
         with f_col1:
-            st.metric("Recommended Strike", fno["strike"], help="ATM / slightly ITM Option contract")
+            st.markdown(f"""
+            <div class="full-digit-card">
+                <div class="digit-title">Recommended Strike</div>
+                <div class="digit-value" style="color: #00E5FF;">{fno['strike']}</div>
+                <div class="digit-sub" style="color: #8B949E;">1 Lot = {f_lot_size} Qty</div>
+            </div>
+            """, unsafe_allow_html=True)
         with f_col2:
-            st.metric("Estimated Option Entry", f"₹ {fno['approx_premium']:.1f}")
+            st.markdown(f"""
+            <div class="full-digit-card">
+                <div class="digit-title">Estimated Entry</div>
+                <div class="digit-value" style="color: #00E676;">₹ {opt_prem:,.2f}</div>
+                <div class="digit-sub" style="color: #8B949E;">Premium / Unit</div>
+            </div>
+            """, unsafe_allow_html=True)
         with f_col3:
-            st.metric("Option Stop Loss", f"₹ {fno['option_stop_loss']:.1f}", delta=f"-{round(fno['approx_premium'] - fno['option_stop_loss'], 1)} pts", delta_color="inverse")
+            st.markdown(f"""
+            <div class="full-digit-card">
+                <div class="digit-title">Option Stop Loss</div>
+                <div class="digit-value" style="color: #FF1744;">₹ {opt_sl:,.2f}</div>
+                <div class="digit-sub" style="color: #FF5252;">Risk: -{round(opt_prem - opt_sl, 2):,.2f} pts</div>
+            </div>
+            """, unsafe_allow_html=True)
         with f_col4:
-            st.metric("Option Target 1", f"₹ {fno['option_target_1']:.1f}")
+            st.markdown(f"""
+            <div class="full-digit-card">
+                <div class="digit-title">Option Target 1</div>
+                <div class="digit-value" style="color: #00E676;">₹ {opt_t1:,.2f}</div>
+                <div class="digit-sub" style="color: #69F0AE;">Gain: +{round(opt_t1 - opt_prem, 2):,.2f} pts</div>
+            </div>
+            """, unsafe_allow_html=True)
         with f_col5:
-            st.metric("Option Target 2", f"₹ {fno['option_target_2']:.1f}")
+            st.markdown(f"""
+            <div class="full-digit-card">
+                <div class="digit-title">Option Target 2</div>
+                <div class="digit-value" style="color: #00C853;">₹ {opt_t2:,.2f}</div>
+                <div class="digit-sub" style="color: #B9F6CA;">Gain: +{round(opt_t2 - opt_prem, 2):,.2f} pts</div>
+            </div>
+            """, unsafe_allow_html=True)
 
     # 1-Click Virtual Paper Trading Execution Panel
     if direction in ("BUY", "SELL"):
