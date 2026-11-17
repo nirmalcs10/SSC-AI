@@ -22,7 +22,7 @@ INDEX_TOKENS = {
         "symbol": "Nifty 50",
         "token": "99926000",
         "exchange": "NSE",
-        "lot_size": 25,
+        "lot_size": 65,  # 1 Lot = 65 Qty
         "strike_step": 50,
         "yfinance_ticker": "^NSEI"
     },

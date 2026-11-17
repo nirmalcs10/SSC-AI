@@ -129,7 +129,7 @@ class OrderManager:
             strike = fno["atm_strike"]
             opt_type = fno["type"]
             trading_symbol = f"{symbol} {strike} {opt_type}"
-            lot_size = INDEX_TOKENS[symbol]["lot_size"]
+            lot_size = fno.get("lot_size") or INDEX_TOKENS.get(symbol, {}).get("lot_size", 65)
             total_qty = quantity * lot_size
             entry_price = float(fno["approx_premium"])
             sl_price = float(fno["option_stop_loss"])

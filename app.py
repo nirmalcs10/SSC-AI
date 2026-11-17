@@ -325,11 +325,22 @@ if plan:
         
         with exec_col1:
             default_qty = 1 if not fno else 1
-            qty_label = "Lots (Options F&O)" if fno else "Quantity (Shares)"
-            trade_qty = st.number_input(qty_label, min_value=1, max_value=50, value=default_qty, step=1)
+            if fno:
+                fno_lot_size = fno.get("lot_size", 65)
+                qty_label = f"Lots (Options F&O) — 1 Lot = {fno_lot_size} Qty"
+                trade_qty = st.number_input(qty_label, min_value=1, max_value=50, value=default_qty, step=1)
+                total_units = int(trade_qty * fno_lot_size)
+                approx_cap = total_units * float(fno.get("approx_premium", 0.0))
+                st.caption(f"📦 **{total_units} Contracts** ({trade_qty} Lot × {fno_lot_size}) • Capital: **₹ {approx_cap:,.1f}**")
+            else:
+                trade_qty = st.number_input("Quantity (Shares)", min_value=1, max_value=5000, value=10, step=1)
+                total_units = int(trade_qty)
         with exec_col2:
             st.write("")
-            btn_label = f"🚀 Place Virtual {direction} Trade ({trade_qty} {'Lot' if fno else 'Shares'})"
+            if fno:
+                btn_label = f"🚀 Place Virtual {direction} Trade ({trade_qty} Lot = {total_units} Qty)"
+            else:
+                btn_label = f"🚀 Place Virtual {direction} Trade ({total_units} Shares)"
             if st.button(btn_label, type="primary", use_container_width=True):
                 with st.spinner("Opening virtual position with Stop Loss & Target..."):
                     exec_res = st.session_state.order_manager.execute_trade_from_plan(
