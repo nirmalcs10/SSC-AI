@@ -21,7 +21,7 @@ from confluence_strategy import ConfluenceStrategy
 from chart_plotter import ChartPlotter
 from order_manager import OrderManager
 from token_manager import TokenManager
-from angel_chart_mirror import render_angel_one_mirror
+from angel_chart_mirror import render_angel_one_mirror, render_angel_one_smartapi_chart
 
 # Page Config
 st.set_page_config(
@@ -379,8 +379,29 @@ with tab_chart:
     }
 
     if "Angel One Live Mirror" in chart_view_mode:
-        st.caption("✨ **1:1 Angel One Chart Mirror** (`trade.angelone.in`) • Full Left Drawing Toolbar • Native Indicators • Sub-Second NSE Feeds")
-        render_angel_one_mirror(symbol=selected_symbol, interval=chart_tf, height=650)
+        chart_source_col1, chart_source_col2 = st.columns([3, 1])
+        with chart_source_col1:
+            chart_feed_type = st.radio(
+                "Engine Mode:",
+                ["⚡ Angel One SmartAPI Feed (TradingView Engine • No Restrictions)", "🌐 TradingView Cloud Widget"],
+                horizontal=True,
+                index=0
+            )
+        with chart_source_col2:
+            st.write("")
+            st.link_button(f"🔗 Open {selected_symbol} on TradingView", f"https://www.tradingview.com/chart/?symbol=NSE:{selected_symbol}", use_container_width=True)
+
+        if "SmartAPI" in chart_feed_type and mtf_data and chart_tf in mtf_data:
+            chart_df = mtf_data[chart_tf]
+            render_angel_one_smartapi_chart(
+                df=chart_df,
+                symbol=selected_symbol,
+                interval=chart_tf,
+                trade_plan=plan,
+                height=640
+            )
+        else:
+            render_angel_one_mirror(symbol=selected_symbol, interval=chart_tf, height=640)
     elif "AI Confluence" in chart_view_mode:
         # Single Focused Full-Width Chart with S/R, CPR, and Trade Box
         if mtf_data and chart_tf in mtf_data:
