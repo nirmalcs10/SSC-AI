@@ -68,6 +68,19 @@ def run_tests():
     )
     print("Chart Figure successfully created with trace count:", len(fig.data))
 
+    # Test Bank Nifty Switching
+    print("\n=== Step 6: Testing Automatic Symbol Switching to BANKNIFTY ===")
+    bn_quote = connector.get_market_quote("BANKNIFTY", mode="FULL")
+    print(f"Bank Nifty LTP: {bn_quote['ltp']}, Exchange: {bn_quote['exchange']}")
+    assert bn_quote["ltp"] > 0, "Bank Nifty LTP must be valid!"
+    bn_data = connector.get_multi_timeframe_data("BANKNIFTY", timeframes=("5m", "15m"))
+    assert not bn_data["5m"].empty, "Bank Nifty 5m data must load!"
+    bn_plan = ConfluenceStrategy(symbol="BANKNIFTY", mode="FNO_INDICES").analyze(bn_data, live_quote=bn_quote)
+    print(f"Bank Nifty Signal: {bn_plan['signal']}, Entry: {bn_plan['entry_price']}, SL: {bn_plan['stop_loss']}")
+    if bn_plan["fno_recommendation"]:
+        print(f"Bank Nifty F&O Strike: {bn_plan['fno_recommendation']['strike']}, Lot Size: {bn_plan['fno_recommendation']['lot_size']}")
+        assert bn_plan['fno_recommendation']['lot_size'] == 15, "Bank Nifty lot size must be 15!"
+
     print("\nALL VERIFICATION CHECKS PASSED SUCCESSFULLY!")
 
 if __name__ == "__main__":

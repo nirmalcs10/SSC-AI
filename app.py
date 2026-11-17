@@ -113,6 +113,10 @@ if "last_analysis" not in st.session_state:
     st.session_state.last_analysis = None
 if "mtf_data" not in st.session_state:
     st.session_state.mtf_data = None
+if "current_symbol" not in st.session_state:
+    st.session_state.current_symbol = None
+if "current_mode" not in st.session_state:
+    st.session_state.current_mode = None
 
 
 # --- SIDEBAR CONFIGURATION ---
@@ -209,7 +213,11 @@ for alert in alerts:
 # --- MAIN LOGIC ---
 timeframes = ("15m", "1h", "1D") if mode_code == "SWING" else ("1m", "5m", "15m", "1h")
 
-if analyze_btn or st.session_state.last_analysis is None:
+# Automatically trigger when symbol or trading mode changes, or on initial load / analyze button click
+symbol_changed = ("current_symbol" not in st.session_state) or (st.session_state.current_symbol != selected_symbol)
+mode_changed = ("current_mode" not in st.session_state) or (st.session_state.current_mode != mode_code)
+
+if analyze_btn or symbol_changed or mode_changed or st.session_state.last_analysis is None:
     with st.spinner(f"Fetching multi-timeframe candles (1m, 5m, 15m, 1h) for {selected_symbol}..."):
         mtf_data = connector.get_multi_timeframe_data(selected_symbol, timeframes=timeframes)
         st.session_state.mtf_data = mtf_data
@@ -217,6 +225,8 @@ if analyze_btn or st.session_state.last_analysis is None:
         strategy = ConfluenceStrategy(symbol=selected_symbol, mode=mode_code)
         plan = strategy.analyze(mtf_data, live_quote=live_quote)
         st.session_state.last_analysis = plan
+        st.session_state.current_symbol = selected_symbol
+        st.session_state.current_mode = mode_code
 
 
 plan = st.session_state.last_analysis
