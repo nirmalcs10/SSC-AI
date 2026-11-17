@@ -81,12 +81,17 @@ class AngelOneConnector:
             return False, "Please enter your 6-digit TOTP code."
 
         try:
+            login_res = None
             if SmartConnect is not None:
                 self.smart_api = SmartConnect(api_key=self.api_key)
-                login_res = self.smart_api.generateSession(self.client_code, self.password, totp)
-            else:
-                # Direct REST API fallback
-                url = "https://apiconnect.angelbroking.com/rest/auth/angelbroking/user/v1/loginByPassword"
+                try:
+                    login_res = self.smart_api.generateSession(self.client_code, self.password, totp)
+                except Exception as smart_err:
+                    logger.warning(f"SmartConnect call error: {smart_err}, attempting direct REST API...")
+
+            if not login_res:
+                # Direct Official Angel One REST API
+                url = "https://apiconnect.angelone.in/rest/auth/angelbroking/user/v1/loginByPassword"
                 headers = {
                     "Content-Type": "application/json",
                     "Accept": "application/json",
@@ -102,8 +107,12 @@ class AngelOneConnector:
                     "password": self.password,
                     "totp": totp
                 }
-                res = requests.post(url, json=payload, headers=headers, timeout=10)
-                login_res = res.json()
+                res = requests.post(url, json=payload, headers=headers, timeout=12)
+                try:
+                    login_res = res.json()
+                except Exception:
+                    logger.error(f"Non-JSON response from Angel One (HTTP {res.status_code}): {res.text[:200]}")
+                    return False, f"Angel One API error (HTTP {res.status_code}). Please check your PIN and 6-digit TOTP."
 
             if login_res and login_res.get("status") is True:
                 self.auth_data = login_res.get("data", {})
@@ -114,12 +123,12 @@ class AngelOneConnector:
                 logger.info("Successfully authenticated with Angel One SmartAPI!")
                 return True, "Login successful"
             else:
-                msg = login_res.get("message", "Unknown authentication error")
+                msg = login_res.get("message", "Authentication rejected by Angel One") if login_res else "Unable to parse login response"
                 logger.warning(f"Angel One Login Failed: {msg}")
                 return False, f"Login failed: {msg}"
         except Exception as e:
             logger.error(f"Error during Angel One login: {e}")
-            return False, f"Exception during login: {str(e)}"
+            return False, f"Login error: {str(e)}"
 
     def get_profile(self) -> Optional[Dict[str, Any]]:
         """Fetch user profile details from Angel One."""

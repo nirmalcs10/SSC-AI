@@ -9,9 +9,9 @@ BASE_DIR = Path(__file__).resolve().parent
 ENV_PATH = BASE_DIR / ".env"
 load_dotenv(ENV_PATH)
 
-# Angel One SmartAPI Credentials
-ANGEL_API_KEY = os.getenv("ANGEL_API_KEY", "https://apiconnect.angelone.in")
-ANGEL_CLIENT_CODE = os.getenv("ANGEL_CLIENT_CODE", "AACO036098")
+# Angel One SmartAPI Credentials (Loaded securely from .env)
+ANGEL_API_KEY = os.getenv("ANGEL_API_KEY", "")
+ANGEL_CLIENT_CODE = os.getenv("ANGEL_CLIENT_CODE", "")
 ANGEL_PASSWORD = os.getenv("ANGEL_PASSWORD", "")  # MPIN / Password
 ANGEL_TOTP_SECRET = os.getenv("ANGEL_TOTP_SECRET", "")  # Base32 secret for TOTP
 
