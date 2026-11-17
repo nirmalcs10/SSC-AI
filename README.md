@@ -1,0 +1,2 @@
+# SSC-AI
+AI Script
