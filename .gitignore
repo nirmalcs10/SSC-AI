@@ -1,0 +1,34 @@
+# Environment and Secrets (CRITICAL: Do NOT commit credentials)
+.env
+.env.local
+.env.*.local
+.streamlit/secrets.toml
+
+# Python bytecode and cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+
+# Local cache and temporary runtime data
+cache/
+data/*.json
+!data/.gitkeep
+
+# Virtual Environments
+venv/
+.venv/
+env/
+ENV/
+
+# IDE and Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS generated files
+Thumbs.db
+Desktop.ini
+.DS_Store
