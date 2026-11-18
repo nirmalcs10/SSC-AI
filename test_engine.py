@@ -45,6 +45,15 @@ def run_tests():
     if plan["fno_recommendation"]:
         fno = plan["fno_recommendation"]
         print(f"F&O Recommendation: Strike {fno['strike']}, Approx Prem: {fno['approx_premium']}, SL: {fno['option_stop_loss']}, T1: {fno['option_target_1']}")
+        assert "call_option" in fno, "call_option must be present in fno_recommendation!"
+        assert "put_option" in fno, "put_option must be present in fno_recommendation!"
+        ce_rec = fno["call_option"]
+        pe_rec = fno["put_option"]
+        print(f"Verified Dual Options -> CE: {ce_rec['strike']}, Prem: ₹{ce_rec['approx_premium']} | PE: {pe_rec['strike']}, Prem: ₹{pe_rec['approx_premium']}")
+        assert ce_rec["atm_strike"] > 0, "CE ATM strike must be > 0"
+        assert pe_rec["atm_strike"] > 0, "PE ATM strike must be > 0"
+        assert ce_rec["approx_premium"] > 0, "CE Approx premium must be > 0"
+        assert pe_rec["approx_premium"] > 0, "PE Approx premium must be > 0"
 
     print("\n=== Step 4: Testing 1-Click Order Execution (Paper Trading Isolated Test) ===")
     from pathlib import Path

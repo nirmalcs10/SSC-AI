@@ -440,55 +440,124 @@ def render_live_fno_and_execution_fragment(sym: str, mode_str: str, plan_dict: d
         live_atm_strike = int(round(live_ltp / stk_step) * stk_step)
         
         dir_plan = plan_dict.get("direction", "BUY") if plan_dict else "BUY"
-        opt_type_rec = "CE" if dir_plan == "BUY" else ("PE" if dir_plan == "SELL" else "CE")
-        rec_strike_label = f"{live_atm_strike} {opt_type_rec}"
-
-        # Estimate live option premium dynamically based on live LTP
         risk_p = float(plan_dict.get("risk_points", 30.0)) if plan_dict else 30.0
-        live_approx_prem = round(max(20.0, risk_p * 2.2), 1)
-        live_opt_sl = round(max(5.0, live_approx_prem - (risk_p * 0.55)), 1)
-        live_opt_t1 = round(live_approx_prem + (risk_p * 0.8), 1)
-        live_opt_t2 = round(live_approx_prem + (risk_p * 1.4), 1)
+        base_prem = round(max(25.0, risk_p * 2.2), 1)
 
-        f_col1, f_col2, f_col3, f_col4, f_col5 = st.columns(5)
-        with f_col1:
+        # 1. Live Call Option (CE) Metrics
+        ce_strike_label = f"{live_atm_strike} CE"
+        live_ce_prem = base_prem
+        live_ce_sl = round(max(5.0, live_ce_prem - (risk_p * 0.55)), 1)
+        live_ce_t1 = round(live_ce_prem + (risk_p * 0.8), 1)
+        live_ce_t2 = round(live_ce_prem + (risk_p * 1.4), 1)
+        is_ce_rec = (dir_plan == "BUY")
+
+        # 2. Live Put Option (PE) Metrics
+        pe_strike_label = f"{live_atm_strike} PE"
+        live_pe_prem = base_prem
+        live_pe_sl = round(max(5.0, live_pe_prem - (risk_p * 0.55)), 1)
+        live_pe_t1 = round(live_pe_prem + (risk_p * 0.8), 1)
+        live_pe_t2 = round(live_pe_prem + (risk_p * 1.4), 1)
+        is_pe_rec = (dir_plan == "SELL")
+
+        # --- CALL OPTION (CE) ROW ---
+        ce_badge = "<span style='background: rgba(0, 230, 118, 0.2); border: 1px solid #00E676; color: #00E676; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;'>🟢 AI RECOMMENDED (BULLISH CONFLUENCE)</span>" if is_ce_rec else "<span style='background: rgba(139, 148, 158, 0.15); border: 1px solid #30363D; color: #8B949E; padding: 2px 8px; border-radius: 4px; font-size: 11px;'>BULLISH ALTERNATIVE</span>"
+        st.markdown(f"""
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px; margin-bottom: 6px;">
+            <span style="font-weight: bold; color: #00E676; font-size: 14px;">🟢 CALL OPTION (CE) • 1 Lot = {idx_lot} Qty</span>
+            {ce_badge}
+        </div>
+        """, unsafe_allow_html=True)
+
+        ce_col1, ce_col2, ce_col3, ce_col4, ce_col5 = st.columns(5)
+        with ce_col1:
             st.markdown(f"""
             <div class="full-digit-card">
-                <div class="digit-title">Live ATM Strike</div>
-                <div class="digit-value" style="color: #00E5FF;">{rec_strike_label}</div>
+                <div class="digit-title">Live ATM Strike (CE)</div>
+                <div class="digit-value" style="color: #00E5FF;">{ce_strike_label}</div>
                 <div class="digit-sub" style="color: #8B949E;">1 Lot = {idx_lot} Qty</div>
             </div>
             """, unsafe_allow_html=True)
-        with f_col2:
+        with ce_col2:
             st.markdown(f"""
             <div class="full-digit-card">
-                <div class="digit-title">Estimated Entry</div>
-                <div class="digit-value" style="color: #00E676;">₹ {live_approx_prem:,.2f}</div>
+                <div class="digit-title">CE Entry Premium</div>
+                <div class="digit-value" style="color: #00E676;">₹ {live_ce_prem:,.2f}</div>
                 <div class="digit-sub" style="color: #8B949E;">Premium / Share</div>
             </div>
             """, unsafe_allow_html=True)
-        with f_col3:
+        with ce_col3:
             st.markdown(f"""
             <div class="full-digit-card">
-                <div class="digit-title">Option Stop Loss</div>
-                <div class="digit-value" style="color: #FF1744;">₹ {live_opt_sl:,.2f}</div>
-                <div class="digit-sub" style="color: #FF5252;">Risk: -{round(live_approx_prem - live_opt_sl, 1):,.1f} pts</div>
+                <div class="digit-title">CE Stop Loss</div>
+                <div class="digit-value" style="color: #FF1744;">₹ {live_ce_sl:,.2f}</div>
+                <div class="digit-sub" style="color: #FF5252;">Risk: -{round(live_ce_prem - live_ce_sl, 1):,.1f} pts</div>
             </div>
             """, unsafe_allow_html=True)
-        with f_col4:
+        with ce_col4:
             st.markdown(f"""
             <div class="full-digit-card">
-                <div class="digit-title">Option Target 1</div>
-                <div class="digit-value" style="color: #00E676;">₹ {live_opt_t1:,.2f}</div>
-                <div class="digit-sub" style="color: #69F0AE;">Gain: +{round(live_opt_t1 - live_approx_prem, 1):,.1f} pts</div>
+                <div class="digit-title">CE Target 1</div>
+                <div class="digit-value" style="color: #00E676;">₹ {live_ce_t1:,.2f}</div>
+                <div class="digit-sub" style="color: #69F0AE;">Gain: +{round(live_ce_t1 - live_ce_prem, 1):,.1f} pts</div>
             </div>
             """, unsafe_allow_html=True)
-        with f_col5:
+        with ce_col5:
             st.markdown(f"""
             <div class="full-digit-card">
-                <div class="digit-title">Option Target 2</div>
-                <div class="digit-value" style="color: #00C853;">₹ {live_opt_t2:,.2f}</div>
-                <div class="digit-sub" style="color: #B9F6CA;">Gain: +{round(live_opt_t2 - live_approx_prem, 1):,.1f} pts</div>
+                <div class="digit-title">CE Target 2</div>
+                <div class="digit-value" style="color: #00C853;">₹ {live_ce_t2:,.2f}</div>
+                <div class="digit-sub" style="color: #B9F6CA;">Gain: +{round(live_ce_t2 - live_ce_prem, 1):,.1f} pts</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        # --- PUT OPTION (PE) ROW (DIRECTLY BELOW CALL OPTION) ---
+        pe_badge = "<span style='background: rgba(255, 23, 68, 0.2); border: 1px solid #FF1744; color: #FF1744; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;'>🔴 AI RECOMMENDED (BEARISH CONFLUENCE)</span>" if is_pe_rec else "<span style='background: rgba(139, 148, 158, 0.15); border: 1px solid #30363D; color: #8B949E; padding: 2px 8px; border-radius: 4px; font-size: 11px;'>BEARISH ALTERNATIVE</span>"
+        st.markdown(f"""
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 14px; margin-bottom: 6px;">
+            <span style="font-weight: bold; color: #FF1744; font-size: 14px;">🔴 PUT OPTION (PE) • 1 Lot = {idx_lot} Qty</span>
+            {pe_badge}
+        </div>
+        """, unsafe_allow_html=True)
+
+        pe_col1, pe_col2, pe_col3, pe_col4, pe_col5 = st.columns(5)
+        with pe_col1:
+            st.markdown(f"""
+            <div class="full-digit-card">
+                <div class="digit-title">Live ATM Strike (PE)</div>
+                <div class="digit-value" style="color: #00E5FF;">{pe_strike_label}</div>
+                <div class="digit-sub" style="color: #8B949E;">1 Lot = {idx_lot} Qty</div>
+            </div>
+            """, unsafe_allow_html=True)
+        with pe_col2:
+            st.markdown(f"""
+            <div class="full-digit-card">
+                <div class="digit-title">PE Entry Premium</div>
+                <div class="digit-value" style="color: #FF5252;">₹ {live_pe_prem:,.2f}</div>
+                <div class="digit-sub" style="color: #8B949E;">Premium / Share</div>
+            </div>
+            """, unsafe_allow_html=True)
+        with pe_col3:
+            st.markdown(f"""
+            <div class="full-digit-card">
+                <div class="digit-title">PE Stop Loss</div>
+                <div class="digit-value" style="color: #FF1744;">₹ {live_pe_sl:,.2f}</div>
+                <div class="digit-sub" style="color: #FF5252;">Risk: -{round(live_pe_prem - live_pe_sl, 1):,.1f} pts</div>
+            </div>
+            """, unsafe_allow_html=True)
+        with pe_col4:
+            st.markdown(f"""
+            <div class="full-digit-card">
+                <div class="digit-title">PE Target 1</div>
+                <div class="digit-value" style="color: #00E676;">₹ {live_pe_t1:,.2f}</div>
+                <div class="digit-sub" style="color: #69F0AE;">Gain: +{round(live_pe_t1 - live_pe_prem, 1):,.1f} pts</div>
+            </div>
+            """, unsafe_allow_html=True)
+        with pe_col5:
+            st.markdown(f"""
+            <div class="full-digit-card">
+                <div class="digit-title">PE Target 2</div>
+                <div class="digit-value" style="color: #00C853;">₹ {live_pe_t2:,.2f}</div>
+                <div class="digit-sub" style="color: #B9F6CA;">Gain: +{round(live_pe_t2 - live_pe_prem, 1):,.1f} pts</div>
             </div>
             """, unsafe_allow_html=True)
 
@@ -516,25 +585,29 @@ def render_live_fno_and_execution_fragment(sym: str, mode_str: str, plan_dict: d
             lot_size = INDEX_TOKENS[sym]["lot_size"]
             trade_lots = st.number_input(f"Lots (1 Lot = {lot_size} Qty)", min_value=1, max_value=50, value=1, step=1, key=f"lots_{sym}")
             total_contracts = int(trade_lots * lot_size)
-            opt_type_chosen = "CE" if exec_direction == "BUY" else "PE"
-            stk_step = INDEX_TOKENS[sym]["strike_step"]
-            atm_stk = int(round(live_ltp / stk_step) * stk_step)
-            exec_trading_sym = f"{sym} {atm_stk} {opt_type_chosen}"
-            exec_entry_p = live_approx_prem if 'live_approx_prem' in locals() else 65.0
-            exec_sl_p = live_opt_sl if 'live_opt_sl' in locals() else exec_entry_p * 0.75
-            exec_t1_p = live_opt_t1 if 'live_opt_t1' in locals() else exec_entry_p * 1.35
-            exec_t2_p = live_opt_t2 if 'live_opt_t2' in locals() else exec_entry_p * 1.60
-            invested_amount = round(total_contracts * exec_entry_p, 2)
 
-            u_entry = float(live_ltp)
             if exec_direction == "BUY":
+                exec_trading_sym = f"{sym} {live_atm_strike} CE"
+                exec_entry_p = live_ce_prem
+                exec_sl_p = live_ce_sl
+                exec_t1_p = live_ce_t1
+                exec_t2_p = live_ce_t2
+                u_entry = float(live_ltp)
                 u_sl = float(plan_dict.get("stop_loss") or round(live_ltp * 0.996, 2))
                 u_t1 = float(plan_dict.get("target_1") or round(live_ltp * 1.004, 2))
                 u_t2 = float(plan_dict.get("target_2") or round(live_ltp * 1.008, 2))
             else:
+                exec_trading_sym = f"{sym} {live_atm_strike} PE"
+                exec_entry_p = live_pe_prem
+                exec_sl_p = live_pe_sl
+                exec_t1_p = live_pe_t1
+                exec_t2_p = live_pe_t2
+                u_entry = float(live_ltp)
                 u_sl = float(plan_dict.get("stop_loss") or round(live_ltp * 1.004, 2))
                 u_t1 = float(plan_dict.get("target_1") or round(live_ltp * 0.996, 2))
                 u_t2 = float(plan_dict.get("target_2") or round(live_ltp * 0.992, 2))
+
+            invested_amount = round(total_contracts * exec_entry_p, 2)
         else:
             trade_shares = st.number_input("Shares Quantity", min_value=1, max_value=5000, value=10, step=1, key=f"shares_{sym}")
             total_contracts = int(trade_shares)

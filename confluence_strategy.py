@@ -249,23 +249,39 @@ class ConfluenceStrategy:
         if self.is_index:
             strike_step = INDEX_TOKENS[self.symbol]["strike_step"]
             atm_strike = int(round(current_price / strike_step) * strike_step)
-            
+            lot_size = INDEX_TOKENS[self.symbol]["lot_size"]
+
+            delta = 0.55
+            base_prem = round(max(35.0, risk_points * 2.2), 1) if risk_points > 0 else 100.0
+
+            # CE (Call Option) calculations
+            ce_strike = f"{atm_strike} CE"
+            ce_prem = base_prem
+            ce_sl = round(max(5.0, ce_prem - (risk_points * delta)), 1)
+            ce_t1 = round(ce_prem + (reward_t1_points * delta), 1)
+            ce_t2 = round(ce_prem + (reward_t2_points * delta), 1)
+
+            # PE (Put Option) calculations
+            pe_strike = f"{atm_strike} PE"
+            pe_prem = base_prem
+            pe_sl = round(max(5.0, pe_prem - (risk_points * delta)), 1)
+            pe_t1 = round(pe_prem + (reward_t1_points * delta), 1)
+            pe_t2 = round(pe_prem + (reward_t2_points * delta), 1)
+
             if direction == "BUY":
                 opt_type = "CE"
-                recommended_strike = f"{atm_strike} CE"
-                approx_prem = round(risk_points * 2.2, 1)
-                delta = 0.55
-                opt_sl = round(max(5.0, approx_prem - (risk_points * delta)), 1)
-                opt_t1 = round(approx_prem + (reward_t1_points * delta), 1)
-                opt_t2 = round(approx_prem + (reward_t2_points * delta), 1)
+                recommended_strike = ce_strike
+                approx_prem = ce_prem
+                opt_sl = ce_sl
+                opt_t1 = ce_t1
+                opt_t2 = ce_t2
             elif direction == "SELL":
                 opt_type = "PE"
-                recommended_strike = f"{atm_strike} PE"
-                approx_prem = round(risk_points * 2.2, 1)
-                delta = 0.55
-                opt_sl = round(max(5.0, approx_prem - (risk_points * delta)), 1)
-                opt_t1 = round(approx_prem + (reward_t1_points * delta), 1)
-                opt_t2 = round(approx_prem + (reward_t2_points * delta), 1)
+                recommended_strike = pe_strike
+                approx_prem = pe_prem
+                opt_sl = pe_sl
+                opt_t1 = pe_t1
+                opt_t2 = pe_t2
             else:
                 opt_type = "CE / PE"
                 recommended_strike = f"{atm_strike} CE/PE"
@@ -282,7 +298,29 @@ class ConfluenceStrategy:
                 "option_stop_loss": opt_sl,
                 "option_target_1": opt_t1,
                 "option_target_2": opt_t2,
-                "lot_size": INDEX_TOKENS[self.symbol]["lot_size"]
+                "lot_size": lot_size,
+                "call_option": {
+                    "strike": ce_strike,
+                    "type": "CE",
+                    "atm_strike": atm_strike,
+                    "approx_premium": ce_prem,
+                    "option_stop_loss": ce_sl,
+                    "option_target_1": ce_t1,
+                    "option_target_2": ce_t2,
+                    "lot_size": lot_size,
+                    "is_recommended": direction == "BUY"
+                },
+                "put_option": {
+                    "strike": pe_strike,
+                    "type": "PE",
+                    "atm_strike": atm_strike,
+                    "approx_premium": pe_prem,
+                    "option_stop_loss": pe_sl,
+                    "option_target_1": pe_t1,
+                    "option_target_2": pe_t2,
+                    "lot_size": lot_size,
+                    "is_recommended": direction == "SELL"
+                }
             }
 
         return {
