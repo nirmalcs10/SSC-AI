@@ -440,11 +440,15 @@ def render_live_fno_and_execution_fragment(sym: str, mode_str: str, plan_dict: d
         idx_lot = idx_cfg["lot_size"]
         live_atm_strike = int(round(live_ltp / stk_step) * stk_step)
 
-        # Fetch Live Option Quotes directly from Angel One Exchange (NFO)
-        opt_market_data = conn.get_options_market_quotes(sym, live_atm_strike, current_spot_ltp=live_ltp)
-        ce_quote_data = opt_market_data.get("call_option", {})
-        pe_quote_data = opt_market_data.get("put_option", {})
+        # Fetch Live Option Quotes directly from Angel One Exchange (NFO) for ITM, ATM, and OTM strikes
+        opt_market_data = conn.get_options_ladder_quotes(sym, live_atm_strike, current_spot_ltp=live_ltp)
+        ce_ladder = opt_market_data.get("CE", {})
+        pe_ladder = opt_market_data.get("PE", {})
         is_live_nfo_exchange = (opt_market_data.get("status") == "LIVE_NFO_EXCHANGE")
+        expiry_str = opt_market_data.get("expiry", "")
+
+        atm_ce = ce_ladder.get("ATM", {})
+        atm_pe = pe_ladder.get("ATM", {})
 
         # Angel One Direct Exchange Live Connection Status Banner
         if conn.is_authenticated:
@@ -453,7 +457,7 @@ def render_live_fno_and_execution_fragment(sym: str, mode_str: str, plan_dict: d
                 <div style="display: flex; align-items: center; gap: 8px;">
                     <span style="font-weight: bold; color: #00E676; font-size: 13px;">🟢 LIVE ANGEL ONE EXCHANGE NFO FEED</span>
                     <span style="font-size: 11px; background: rgba(0, 230, 118, 0.2); color: #00E676; padding: 1px 6px; border-radius: 4px; font-weight: bold;">DIRECT NFO QUOTE</span>
-                    <span style="font-size: 11px; color: #8B949E;">Tokens: {ce_quote_data.get('token', 'N/A')} (CE) | {pe_quote_data.get('token', 'N/A')} (PE)</span>
+                    <span style="font-size: 11px; color: #8B949E;">Active Tokens: {atm_ce.get('token', 'N/A')} (CE) | {atm_pe.get('token', 'N/A')} (PE)</span>
                 </div>
                 <span style="font-size: 11px; color: #00E676; font-weight: bold;">⚡ Sub-100ms Feed</span>
             </div>
@@ -486,31 +490,46 @@ def render_live_fno_and_execution_fragment(sym: str, mode_str: str, plan_dict: d
                             st.rerun()
                         else:
                             st.error(s_msg)
-        
+
+        # Interactive Moneyness Selector: ATM / ITM / OTM
+        mon_row1, mon_row2 = st.columns([3, 1])
+        with mon_row1:
+            sel_moneyness = st.radio(
+                "🎯 Select Strike Moneyness to Display:",
+                ["🎯 ATM (At-The-Money)", "💎 ITM (In-The-Money)", "🚀 OTM (Out-of-The-Money)"],
+                index=0,
+                horizontal=True,
+                key=f"moneyness_sel_{sym}"
+            )
+        m_key = "ATM" if "ATM" in sel_moneyness else ("ITM" if "ITM" in sel_moneyness else "OTM")
+
+        ce_selected = ce_ladder.get(m_key, atm_ce)
+        pe_selected = pe_ladder.get(m_key, atm_pe)
+
         dir_plan = plan_dict.get("direction", "BUY") if plan_dict else "BUY"
         risk_p = float(plan_dict.get("risk_points", 30.0)) if plan_dict else 30.0
         base_prem = round(max(25.0, risk_p * 2.2), 1)
 
-        # 1. Live Call Option (CE) Metrics
-        exp_str = ce_quote_data.get("expiry") or pe_quote_data.get("expiry") or ""
-        ce_strike_display = f"{sym} {exp_str} {live_atm_strike} CE" if exp_str else (ce_quote_data.get("symbol") or f"{sym} {live_atm_strike} CE")
-        pe_strike_display = f"{sym} {exp_str} {live_atm_strike} PE" if exp_str else (pe_quote_data.get("symbol") or f"{sym} {live_atm_strike} PE")
-
-        live_ce_prem = float(ce_quote_data.get("ltp") or base_prem)
-        ce_bid = float(ce_quote_data.get("best_bid") or (live_ce_prem - 0.5))
-        ce_ask = float(ce_quote_data.get("best_ask") or (live_ce_prem + 0.5))
-        live_ce_sl = round(max(5.0, live_ce_prem * 0.75), 1)
-        live_ce_t1 = round(live_ce_prem * 1.35, 1)
-        live_ce_t2 = round(live_ce_prem * 1.60, 1)
+        # 1. Selected Call Option (CE) Metrics
+        ce_strike_val = ce_selected.get("strike", live_atm_strike)
+        ce_strike_display = f"{sym} {expiry_str} {ce_strike_val} CE" if expiry_str else (ce_selected.get("symbol") or f"{sym} {ce_strike_val} CE")
+        live_ce_prem = float(ce_selected.get("ltp") or base_prem)
+        ce_bid = float(ce_selected.get("best_bid") or (live_ce_prem - 0.5))
+        ce_ask = float(ce_selected.get("best_ask") or (live_ce_prem + 0.5))
+        live_ce_sl = float(ce_selected.get("sl") or round(max(5.0, live_ce_prem * 0.75), 1))
+        live_ce_t1 = float(ce_selected.get("t1") or round(live_ce_prem * 1.35, 1))
+        live_ce_t2 = float(ce_selected.get("t2") or round(live_ce_prem * 1.60, 1))
         is_ce_rec = (dir_plan == "BUY")
 
-        # 2. Live Put Option (PE) Metrics
-        live_pe_prem = float(pe_quote_data.get("ltp") or base_prem)
-        pe_bid = float(pe_quote_data.get("best_bid") or (live_pe_prem - 0.5))
-        pe_ask = float(pe_quote_data.get("best_ask") or (live_pe_prem + 0.5))
-        live_pe_sl = round(max(5.0, live_pe_prem * 0.75), 1)
-        live_pe_t1 = round(live_pe_prem * 1.35, 1)
-        live_pe_t2 = round(live_pe_prem * 1.60, 1)
+        # 2. Selected Put Option (PE) Metrics
+        pe_strike_val = pe_selected.get("strike", live_atm_strike)
+        pe_strike_display = f"{sym} {expiry_str} {pe_strike_val} PE" if expiry_str else (pe_selected.get("symbol") or f"{sym} {pe_strike_val} PE")
+        live_pe_prem = float(pe_selected.get("ltp") or base_prem)
+        pe_bid = float(pe_selected.get("best_bid") or (live_pe_prem - 0.5))
+        pe_ask = float(pe_selected.get("best_ask") or (live_pe_prem + 0.5))
+        live_pe_sl = float(pe_selected.get("sl") or round(max(5.0, live_pe_prem * 0.75), 1))
+        live_pe_t1 = float(pe_selected.get("t1") or round(live_pe_prem * 1.35, 1))
+        live_pe_t2 = float(pe_selected.get("t2") or round(live_pe_prem * 1.60, 1))
         is_pe_rec = (dir_plan == "SELL")
 
         # --- CALL OPTION (CE) ROW ---
@@ -520,7 +539,7 @@ def render_live_fno_and_execution_fragment(sym: str, mode_str: str, plan_dict: d
         st.markdown(f"""
         <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px; margin-bottom: 6px;">
             <div style="display: flex; gap: 10px; align-items: center;">
-                <span style="font-weight: bold; color: #00E676; font-size: 14px;">🟢 CALL OPTION (CE) • 1 Lot = {idx_lot} Qty</span>
+                <span style="font-weight: bold; color: #00E676; font-size: 14px;">🟢 CALL OPTION (CE) • {m_key} Strike • 1 Lot = {idx_lot} Qty</span>
                 {feed_badge}
             </div>
             {ce_badge}
@@ -531,7 +550,7 @@ def render_live_fno_and_execution_fragment(sym: str, mode_str: str, plan_dict: d
         with ce_col1:
             st.markdown(f"""
             <div class="full-digit-card">
-                <div class="digit-title">Live ATM Strike (CE)</div>
+                <div class="digit-title">Live {m_key} Strike (CE)</div>
                 <div class="digit-value" style="color: #00E5FF; font-size: 15px;">{ce_strike_display}</div>
                 <div class="digit-sub" style="color: #8B949E;">1 Lot = {idx_lot} Qty</div>
             </div>
@@ -574,7 +593,7 @@ def render_live_fno_and_execution_fragment(sym: str, mode_str: str, plan_dict: d
         st.markdown(f"""
         <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 14px; margin-bottom: 6px;">
             <div style="display: flex; gap: 10px; align-items: center;">
-                <span style="font-weight: bold; color: #FF1744; font-size: 14px;">🔴 PUT OPTION (PE) • 1 Lot = {idx_lot} Qty</span>
+                <span style="font-weight: bold; color: #FF1744; font-size: 14px;">🔴 PUT OPTION (PE) • {m_key} Strike • 1 Lot = {idx_lot} Qty</span>
                 {feed_badge}
             </div>
             {pe_badge}
@@ -585,7 +604,7 @@ def render_live_fno_and_execution_fragment(sym: str, mode_str: str, plan_dict: d
         with pe_col1:
             st.markdown(f"""
             <div class="full-digit-card">
-                <div class="digit-title">Live ATM Strike (PE)</div>
+                <div class="digit-title">Live {m_key} Strike (PE)</div>
                 <div class="digit-value" style="color: #00E5FF; font-size: 15px;">{pe_strike_display}</div>
                 <div class="digit-sub" style="color: #8B949E;">1 Lot = {idx_lot} Qty</div>
             </div>
@@ -623,6 +642,40 @@ def render_live_fno_and_execution_fragment(sym: str, mode_str: str, plan_dict: d
             </div>
             """, unsafe_allow_html=True)
 
+        # --- MULTI-STRIKE OPTION LADDER MATRIX (ITM • ATM • OTM) ---
+        with st.expander("📊 Complete Strike Ladder Matrix (ITM • ATM • OTM Comparison)", expanded=True):
+            ladder_col1, ladder_col2 = st.columns(2)
+            with ladder_col1:
+                st.markdown("<span style='color: #00E676; font-weight: bold;'>🟢 CALL (CE) STRIKE LADDER</span>", unsafe_allow_html=True)
+                ce_rows = []
+                for tier in ["ITM", "ATM", "OTM"]:
+                    c = ce_ladder.get(tier, {})
+                    ce_rows.append({
+                        "Tier": f"💎 {tier}" if tier == "ITM" else ("🎯 ATM" if tier == "ATM" else "🚀 OTM"),
+                        "Strike": c.get("strike"),
+                        "Symbol": c.get("symbol"),
+                        "LTP (₹)": f"₹ {c.get('ltp', 0.0):,.2f}",
+                        "Bid / Ask": f"₹{c.get('best_bid', 0.0):.1f} / ₹{c.get('best_ask', 0.0):.1f}",
+                        "SL (₹)": f"₹ {c.get('sl', 0.0):,.1f}",
+                        "Target 1 (₹)": f"₹ {c.get('t1', 0.0):,.1f}"
+                    })
+                st.dataframe(pd.DataFrame(ce_rows), use_container_width=True, hide_index=True)
+            with ladder_col2:
+                st.markdown("<span style='color: #FF5252; font-weight: bold;'>🔴 PUT (PE) STRIKE LADDER</span>", unsafe_allow_html=True)
+                pe_rows = []
+                for tier in ["ITM", "ATM", "OTM"]:
+                    p = pe_ladder.get(tier, {})
+                    pe_rows.append({
+                        "Tier": f"💎 {tier}" if tier == "ITM" else ("🎯 ATM" if tier == "ATM" else "🚀 OTM"),
+                        "Strike": p.get("strike"),
+                        "Symbol": p.get("symbol"),
+                        "LTP (₹)": f"₹ {p.get('ltp', 0.0):,.2f}",
+                        "Bid / Ask": f"₹{p.get('best_bid', 0.0):.1f} / ₹{p.get('best_ask', 0.0):.1f}",
+                        "SL (₹)": f"₹ {p.get('sl', 0.0):,.1f}",
+                        "Target 1 (₹)": f"₹ {p.get('t1', 0.0):,.1f}"
+                    })
+                st.dataframe(pd.DataFrame(pe_rows), use_container_width=True, hide_index=True)
+
     # 5. 1-Click Virtual Paper Trade Execution Panel (Available on ALL INDICES & EQUITIES)
     st.markdown("""<div class="execution-box">""", unsafe_allow_html=True)
     st.markdown("<span style='color: #00E5FF; font-weight: bold; font-size: 16px;'>📝 1-Click Virtual Paper Trade Execution (Zero Real Money Risk)</span>", unsafe_allow_html=True)
@@ -642,29 +695,34 @@ def render_live_fno_and_execution_fragment(sym: str, mode_str: str, plan_dict: d
         )
         exec_direction = "BUY" if "BUY" in trade_side_label else "SELL"
 
+        if is_idx:
+            exec_tier_label = st.radio(
+                "Execute Moneyness Strike:",
+                ["🎯 ATM Strike", "💎 ITM Strike", "🚀 OTM Strike"],
+                index=0,
+                horizontal=True,
+                key=f"tier_exec_{sym}"
+            )
+            exec_tier = "ATM" if "ATM" in exec_tier_label else ("ITM" if "ITM" in exec_tier_label else "OTM")
+
     with exec_col2:
         if is_idx:
             lot_size = INDEX_TOKENS[sym]["lot_size"]
             trade_lots = st.number_input(f"Lots (1 Lot = {lot_size} Qty)", min_value=1, max_value=50, value=1, step=1, key=f"lots_{sym}")
             total_contracts = int(trade_lots * lot_size)
 
+            chosen_opt = ce_ladder.get(exec_tier, {}) if exec_direction == "BUY" else pe_ladder.get(exec_tier, {})
+            exec_trading_sym = chosen_opt.get("symbol", (ce_strike_display if exec_direction == "BUY" else pe_strike_display))
+            exec_entry_p = float(chosen_opt.get("ltp") or (live_ce_prem if exec_direction == "BUY" else live_pe_prem))
+            exec_sl_p = float(chosen_opt.get("sl") or (live_ce_sl if exec_direction == "BUY" else live_pe_sl))
+            exec_t1_p = float(chosen_opt.get("t1") or (live_ce_t1 if exec_direction == "BUY" else live_pe_t1))
+            exec_t2_p = float(chosen_opt.get("t2") or (live_ce_t2 if exec_direction == "BUY" else live_pe_t2))
+            u_entry = float(live_ltp)
             if exec_direction == "BUY":
-                exec_trading_sym = ce_strike_display
-                exec_entry_p = live_ce_prem
-                exec_sl_p = live_ce_sl
-                exec_t1_p = live_ce_t1
-                exec_t2_p = live_ce_t2
-                u_entry = float(live_ltp)
                 u_sl = float(plan_dict.get("stop_loss") or round(live_ltp * 0.996, 2))
                 u_t1 = float(plan_dict.get("target_1") or round(live_ltp * 1.004, 2))
                 u_t2 = float(plan_dict.get("target_2") or round(live_ltp * 1.008, 2))
             else:
-                exec_trading_sym = pe_strike_display
-                exec_entry_p = live_pe_prem
-                exec_sl_p = live_pe_sl
-                exec_t1_p = live_pe_t1
-                exec_t2_p = live_pe_t2
-                u_entry = float(live_ltp)
                 u_sl = float(plan_dict.get("stop_loss") or round(live_ltp * 1.004, 2))
                 u_t1 = float(plan_dict.get("target_1") or round(live_ltp * 0.996, 2))
                 u_t2 = float(plan_dict.get("target_2") or round(live_ltp * 0.992, 2))

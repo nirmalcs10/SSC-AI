@@ -479,59 +479,89 @@ class AngelOneConnector:
         }
         return ce_token, pe_token, ce_sym, pe_sym, expiry_str
 
-    def get_options_market_quotes(self, symbol: str, strike: int, current_spot_ltp: float = 0.0) -> Dict[str, Any]:
+    def get_options_ladder_quotes(self, symbol: str, atm_strike: int, current_spot_ltp: float = 0.0) -> Dict[str, Any]:
         """
-        Fetches real-time market quote data for both CE and PE option strikes
-        directly from Angel One exchange (NFO).
-        Executes a single multi-token API request for optimal sub-100ms latency.
+        Fetches real-time market quote data for ITM, ATM, and OTM option strikes
+        for both Call (CE) and Put (PE) options.
+        Resolves tokens for all 6 contracts and queries Angel One in a single batch request.
         """
-        ce_token, pe_token, ce_sym, pe_sym, expiry_str = self.resolve_option_tokens(symbol, strike)
+        from token_manager import TokenManager
+        tm = TokenManager.get_instance()
 
-        ce_quote = {
-            "symbol": ce_sym,
-            "token": ce_token,
-            "expiry": expiry_str,
-            "strike": strike,
-            "type": "CE",
-            "ltp": 0.0,
-            "open": 0.0,
-            "high": 0.0,
-            "low": 0.0,
-            "close": 0.0,
-            "best_bid": 0.0,
-            "best_ask": 0.0,
-            "volume": 0,
-            "oi": 0,
-            "feed_source": "SIMULATED"
-        }
-        pe_quote = {
-            "symbol": pe_sym,
-            "token": pe_token,
-            "expiry": expiry_str,
-            "strike": strike,
-            "type": "PE",
-            "ltp": 0.0,
-            "open": 0.0,
-            "high": 0.0,
-            "low": 0.0,
-            "close": 0.0,
-            "best_bid": 0.0,
-            "best_ask": 0.0,
-            "volume": 0,
-            "oi": 0,
-            "feed_source": "SIMULATED"
+        sym_upper = symbol.upper().strip()
+        idx_info = INDEX_TOKENS.get(sym_upper, {})
+        stk_step = int(idx_info.get("strike_step", 50))
+        spot = current_spot_ltp if current_spot_ltp > 0 else float(atm_strike)
+
+        # Define 3 strikes for CE: ITM (lower strike), ATM, OTM (higher strike)
+        # Define 3 strikes for PE: ITM (higher strike), ATM, OTM (lower strike)
+        ladder_targets = {
+            "CE": {
+                "ITM": atm_strike - stk_step,
+                "ATM": atm_strike,
+                "OTM": atm_strike + stk_step
+            },
+            "PE": {
+                "ITM": atm_strike + stk_step,
+                "ATM": atm_strike,
+                "OTM": atm_strike - stk_step
+            }
         }
 
+        tokens_map = {}  # token -> (opt_type, moneyness)
         tokens_to_fetch = []
-        if ce_token:
-            tokens_to_fetch.append(ce_token)
-        if pe_token:
-            tokens_to_fetch.append(pe_token)
+        result = {
+            "status": "SIMULATED_FEED",
+            "symbol": symbol,
+            "atm_strike": atm_strike,
+            "strike_step": stk_step,
+            "spot_ltp": spot,
+            "expiry": "",
+            "CE": {},
+            "PE": {}
+        }
+
+        # 1. Resolve tokens and initialize quotes for all 6 contracts
+        for opt_type in ["CE", "PE"]:
+            for m_key, strike_val in ladder_targets[opt_type].items():
+                opt_info = tm.find_option_token(sym_upper, strike_val, opt_type)
+                token = str(opt_info.get("token", "")) if opt_info else ""
+                tradingsymbol = str(opt_info.get("symbol", f"{sym_upper}{strike_val}{opt_type}")) if opt_info else f"{sym_upper} {strike_val} {opt_type}"
+                expiry = str(opt_info.get("expiry", "")) if opt_info else ""
+                if expiry and not result["expiry"]:
+                    result["expiry"] = expiry
+
+                quote_entry = {
+                    "symbol": tradingsymbol,
+                    "token": token,
+                    "expiry": expiry,
+                    "strike": strike_val,
+                    "type": opt_type,
+                    "moneyness": m_key,
+                    "ltp": 0.0,
+                    "open": 0.0,
+                    "high": 0.0,
+                    "low": 0.0,
+                    "close": 0.0,
+                    "best_bid": 0.0,
+                    "best_ask": 0.0,
+                    "volume": 0,
+                    "oi": 0,
+                    "sl": 0.0,
+                    "t1": 0.0,
+                    "t2": 0.0,
+                    "feed_source": "SIMULATED"
+                }
+                result[opt_type][m_key] = quote_entry
+                if token:
+                    tokens_map[token] = (opt_type, m_key)
+                    tokens_to_fetch.append(token)
 
         is_live_nfo = False
 
+        # 2. Query Angel One SmartAPI in batch if authenticated
         if self.is_authenticated and tokens_to_fetch:
-            # 1. Native SmartConnect SDK getMarketData
+            # Native SmartConnect SDK
             if self.smart_api:
                 try:
                     sdk_data = self.smart_api.getMarketData(mode="FULL", exchangeTokens={"NFO": tokens_to_fetch})
@@ -539,15 +569,14 @@ class AngelOneConnector:
                         fetched = sdk_data["data"].get("fetched", [])
                         for item in fetched:
                             tok = str(item.get("symbolToken", item.get("token", "")))
-                            item_ltp = float(item.get("ltp", 0.0))
-                            depth = item.get("depth", {})
-                            best_bid = float(depth.get("buy", [{}])[0].get("price", 0.0)) if depth.get("buy") else item_ltp
-                            best_ask = float(depth.get("sell", [{}])[0].get("price", 0.0)) if depth.get("sell") else item_ltp
-                            vol = int(item.get("tradeVolume", item.get("volume", 0)))
-                            oi = int(item.get("opnInterest", 0))
+                            if tok in tokens_map:
+                                o_type, o_m = tokens_map[tok]
+                                item_ltp = float(item.get("ltp", 0.0))
+                                depth = item.get("depth", {})
+                                best_bid = float(depth.get("buy", [{}])[0].get("price", 0.0)) if depth.get("buy") else item_ltp
+                                best_ask = float(depth.get("sell", [{}])[0].get("price", 0.0)) if depth.get("sell") else item_ltp
 
-                            if tok == ce_token or (ce_sym and str(item.get("tradingSymbol", "")) == ce_sym):
-                                ce_quote.update({
+                                result[o_type][o_m].update({
                                     "ltp": item_ltp,
                                     "open": float(item.get("open", item_ltp)),
                                     "high": float(item.get("high", item_ltp)),
@@ -555,32 +584,16 @@ class AngelOneConnector:
                                     "close": float(item.get("close", item_ltp)),
                                     "best_bid": best_bid,
                                     "best_ask": best_ask,
-                                    "volume": vol,
-                                    "oi": oi,
-                                    "feed_source": "LIVE_NFO_EXCHANGE"
-                                })
-                                if item_ltp > 0:
-                                    is_live_nfo = True
-
-                            elif tok == pe_token or (pe_sym and str(item.get("tradingSymbol", "")) == pe_sym):
-                                pe_quote.update({
-                                    "ltp": item_ltp,
-                                    "open": float(item.get("open", item_ltp)),
-                                    "high": float(item.get("high", item_ltp)),
-                                    "low": float(item.get("low", item_ltp)),
-                                    "close": float(item.get("close", item_ltp)),
-                                    "best_bid": best_bid,
-                                    "best_ask": best_ask,
-                                    "volume": vol,
-                                    "oi": oi,
+                                    "volume": int(item.get("tradeVolume", item.get("volume", 0))),
+                                    "oi": int(item.get("opnInterest", 0)),
                                     "feed_source": "LIVE_NFO_EXCHANGE"
                                 })
                                 if item_ltp > 0:
                                     is_live_nfo = True
                 except Exception as sdk_err:
-                    logger.warning(f"SmartConnect.getMarketData failed: {sdk_err}, trying fallback...")
+                    logger.warning(f"Ladder getMarketData error: {sdk_err}")
 
-            # 2. Direct REST API fallback if SDK didn't return live data
+            # REST fallback if SDK missed
             if not is_live_nfo and self.jwt_token:
                 try:
                     url = "https://apiconnect.angelone.in/rest/secure/angelbroking/market/v1/quote/"
@@ -595,27 +608,20 @@ class AngelOneConnector:
                         "X-PrivateKey": self.api_key,
                         "Authorization": f"Bearer {self.jwt_token}"
                     }
-                    payload = {
-                        "mode": "FULL",
-                        "exchangeTokens": {
-                            "NFO": tokens_to_fetch
-                        }
-                    }
+                    payload = {"mode": "FULL", "exchangeTokens": {"NFO": tokens_to_fetch}}
                     res = requests.post(url, json=payload, headers=headers, timeout=4)
                     data = res.json()
                     if data and data.get("status") is True and data.get("data"):
                         fetched = data["data"].get("fetched", [])
                         for item in fetched:
                             tok = str(item.get("symbolToken", item.get("token", "")))
-                            item_ltp = float(item.get("ltp", 0.0))
-                            depth = item.get("depth", {})
-                            best_bid = float(depth.get("buy", [{}])[0].get("price", 0.0)) if depth.get("buy") else item_ltp
-                            best_ask = float(depth.get("sell", [{}])[0].get("price", 0.0)) if depth.get("sell") else item_ltp
-                            vol = int(item.get("tradeVolume", item.get("volume", 0)))
-                            oi = int(item.get("opnInterest", 0))
-
-                            if tok == ce_token or (ce_sym and str(item.get("tradingSymbol", "")) == ce_sym):
-                                ce_quote.update({
+                            if tok in tokens_map:
+                                o_type, o_m = tokens_map[tok]
+                                item_ltp = float(item.get("ltp", 0.0))
+                                depth = item.get("depth", {})
+                                best_bid = float(depth.get("buy", [{}])[0].get("price", 0.0)) if depth.get("buy") else item_ltp
+                                best_ask = float(depth.get("sell", [{}])[0].get("price", 0.0)) if depth.get("sell") else item_ltp
+                                result[o_type][o_m].update({
                                     "ltp": item_ltp,
                                     "open": float(item.get("open", item_ltp)),
                                     "high": float(item.get("high", item_ltp)),
@@ -623,62 +629,66 @@ class AngelOneConnector:
                                     "close": float(item.get("close", item_ltp)),
                                     "best_bid": best_bid,
                                     "best_ask": best_ask,
-                                    "volume": vol,
-                                    "oi": oi,
-                                    "feed_source": "LIVE_NFO_EXCHANGE"
-                                })
-                                if item_ltp > 0:
-                                    is_live_nfo = True
-
-                            elif tok == pe_token or (pe_sym and str(item.get("tradingSymbol", "")) == pe_sym):
-                                pe_quote.update({
-                                    "ltp": item_ltp,
-                                    "open": float(item.get("open", item_ltp)),
-                                    "high": float(item.get("high", item_ltp)),
-                                    "low": float(item.get("low", item_ltp)),
-                                    "close": float(item.get("close", item_ltp)),
-                                    "best_bid": best_bid,
-                                    "best_ask": best_ask,
-                                    "volume": vol,
-                                    "oi": oi,
+                                    "volume": int(item.get("tradeVolume", item.get("volume", 0))),
+                                    "oi": int(item.get("opnInterest", 0)),
                                     "feed_source": "LIVE_NFO_EXCHANGE"
                                 })
                                 if item_ltp > 0:
                                     is_live_nfo = True
                 except Exception as e:
-                    logger.warning(f"Error fetching live NFO quotes from Angel One: {e}")
+                    logger.warning(f"Ladder REST fallback error: {e}")
 
-        # Calibrated realistic market model for Indian index options matching live market levels
-        # (e.g. NIFTY 25200 CE = ₹164.0, PE = ₹180.0)
-        if ce_quote["ltp"] <= 0.0:
-            spot = current_spot_ltp if current_spot_ltp > 0 else float(strike)
-            diff = spot - strike
-            intrinsic = max(0.0, diff)
-            base_time_val = round(spot * (0.006508 if "BANK" not in symbol.upper() else 0.0065), 1)
-            time_val = max(30.0, round(base_time_val - abs(diff) * 0.15, 1))
-            ce_quote["ltp"] = round(intrinsic + time_val, 1)
-            ce_quote["best_bid"] = round(ce_quote["ltp"] - 0.5, 1)
-            ce_quote["best_ask"] = round(ce_quote["ltp"] + 0.5, 1)
+        # 3. Calibrated realistic baseline for strikes when offline or pre-login
+        is_bank = "BANK" in sym_upper
+        for m_key, q in result["CE"].items():
+            if q["ltp"] <= 0.0:
+                stk = q["strike"]
+                diff = spot - stk
+                intrinsic = max(0.0, diff)
+                base_time_val = round(spot * (0.006508 if not is_bank else 0.0065), 1)
+                time_val = max(15.0, round(base_time_val - abs(diff) * 0.15, 1))
+                q["ltp"] = round(intrinsic + time_val, 1)
+                q["best_bid"] = round(q["ltp"] - 0.5, 1)
+                q["best_ask"] = round(q["ltp"] + 0.5, 1)
+            q["sl"] = round(max(5.0, q["ltp"] * 0.75), 1)
+            q["t1"] = round(q["ltp"] * 1.35, 1)
+            q["t2"] = round(q["ltp"] * 1.60, 1)
 
-        if pe_quote["ltp"] <= 0.0:
-            spot = current_spot_ltp if current_spot_ltp > 0 else float(strike)
-            diff = strike - spot
-            intrinsic = max(0.0, diff)
-            base_time_val = round(spot * (0.007143 if "BANK" not in symbol.upper() else 0.0068), 1)
-            time_val = max(30.0, round(base_time_val - abs(diff) * 0.15, 1))
-            pe_quote["ltp"] = round(intrinsic + time_val, 1)
-            pe_quote["best_bid"] = round(pe_quote["ltp"] - 0.5, 1)
-            pe_quote["best_ask"] = round(pe_quote["ltp"] + 0.5, 1)
-            pe_quote["best_bid"] = round(pe_quote["ltp"] - 0.5, 1)
-            pe_quote["best_ask"] = round(pe_quote["ltp"] + 0.5, 1)
+        for m_key, q in result["PE"].items():
+            if q["ltp"] <= 0.0:
+                stk = q["strike"]
+                diff = stk - spot
+                intrinsic = max(0.0, diff)
+                base_time_val = round(spot * (0.007143 if not is_bank else 0.0068), 1)
+                time_val = max(15.0, round(base_time_val - abs(diff) * 0.15, 1))
+                q["ltp"] = round(intrinsic + time_val, 1)
+                q["best_bid"] = round(q["ltp"] - 0.5, 1)
+                q["best_ask"] = round(q["ltp"] + 0.5, 1)
+            q["sl"] = round(max(5.0, q["ltp"] * 0.75), 1)
+            q["t1"] = round(q["ltp"] * 1.35, 1)
+            q["t2"] = round(q["ltp"] * 1.60, 1)
+
+        result["status"] = "LIVE_NFO_EXCHANGE" if is_live_nfo else "SIMULATED_FEED"
+        return result
+
+    def get_options_market_quotes(self, symbol: str, strike: int, current_spot_ltp: float = 0.0) -> Dict[str, Any]:
+        """
+        Fetches real-time market quote data for both CE and PE option strikes
+        directly from Angel One exchange (NFO).
+        Delegates to get_options_ladder_quotes for complete ITM/ATM/OTM alignment.
+        """
+        ladder = self.get_options_ladder_quotes(symbol, strike, current_spot_ltp=current_spot_ltp)
+        ce_quote = ladder["CE"]["ATM"]
+        pe_quote = ladder["PE"]["ATM"]
 
         return {
-            "status": "LIVE_NFO_EXCHANGE" if is_live_nfo else "SIMULATED_FEED",
+            "status": ladder["status"],
             "symbol": symbol,
             "strike": strike,
-            "expiry": expiry_str,
+            "expiry": ladder["expiry"],
             "call_option": ce_quote,
-            "put_option": pe_quote
+            "put_option": pe_quote,
+            "ladder": ladder
         }
 
     def get_token_for_symbol(self, symbol: str) -> Tuple[str, str]:

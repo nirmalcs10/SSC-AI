@@ -34,6 +34,27 @@ def run_tests():
     assert "25200" in ce_q["symbol"], "CE symbol must match strike 25200"
     assert "25200" in pe_q["symbol"], "PE symbol must match strike 25200"
 
+    print("\n=== Step 2c: Testing Multi-Moneyness Strike Ladder (ITM, ATM, OTM) ===")
+    ladder_data = connector.get_options_ladder_quotes("NIFTY", atm_strike=25200, current_spot_ltp=quote["ltp"])
+    print("Ladder status:", ladder_data["status"])
+    for opt_t in ["CE", "PE"]:
+        for tier in ["ITM", "ATM", "OTM"]:
+            item = ladder_data[opt_t][tier]
+            print(f"[{opt_t} {tier}] Strike: {item['strike']}, Symbol: {item['symbol']}, Token: {item['token']}, LTP: ₹{item['ltp']}, SL: ₹{item['sl']}, T1: ₹{item['t1']}")
+            assert item["strike"] > 0, f"{opt_t} {tier} strike must be > 0"
+            assert item["ltp"] > 0, f"{opt_t} {tier} LTP must be > 0"
+            assert item["token"], f"{opt_t} {tier} must resolve a valid token"
+    # Verify relative moneyness gradient
+    ce_itm_ltp = ladder_data["CE"]["ITM"]["ltp"]
+    ce_atm_ltp = ladder_data["CE"]["ATM"]["ltp"]
+    ce_otm_ltp = ladder_data["CE"]["OTM"]["ltp"]
+    assert ce_itm_ltp >= ce_atm_ltp >= ce_otm_ltp, f"CE Moneyness gradient violated: ITM={ce_itm_ltp}, ATM={ce_atm_ltp}, OTM={ce_otm_ltp}"
+
+    pe_itm_ltp = ladder_data["PE"]["ITM"]["ltp"]
+    pe_atm_ltp = ladder_data["PE"]["ATM"]["ltp"]
+    pe_otm_ltp = ladder_data["PE"]["OTM"]["ltp"]
+    assert pe_itm_ltp >= pe_atm_ltp >= pe_otm_ltp, f"PE Moneyness gradient violated: ITM={pe_itm_ltp}, ATM={pe_atm_ltp}, OTM={pe_otm_ltp}"
+
     print("\n=== Step 3: Multi-Timeframe Candle Retrieval ===")
     mtf_data = connector.get_multi_timeframe_data("NIFTY", timeframes=("1m", "5m", "15m", "1h"))
     for tf, df in mtf_data.items():
