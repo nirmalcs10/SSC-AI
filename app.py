@@ -257,14 +257,108 @@ if plan:
     card_class = "buy-card" if direction == "BUY" else ("sell-card" if direction == "SELL" else "wait-card")
     icon = "🚀" if direction == "BUY" else ("🔻" if direction == "SELL" else "⏳")
 
-    st.markdown(f"""
-    <div class="trade-card {card_class}">
-        <div style="display: flex; justify-content: space-between; align-items: center;">
-            <h2 style="margin: 0;">{icon} Signal: {signal} ({direction})</h2>
-            <h3 style="margin: 0; color: #FFD600;">Confluence Score: {plan.get('confluence_score', 0)} / 100</h3>
+    sig_c1, sig_c2 = st.columns([3.2, 1.2])
+    with sig_c1:
+        st.markdown(f"""
+        <div class="trade-card {card_class}">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <h2 style="margin: 0;">{icon} Signal: {signal} ({direction})</h2>
+                <h3 style="margin: 0; color: #FFD600;">Confluence Score: {plan.get('confluence_score', 0)} / 100</h3>
+            </div>
         </div>
-    </div>
-    """, unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
+    with sig_c2:
+        st.write("")
+        why_active = st.session_state.get("show_why_signal", False)
+        why_label = f"❌ Close Reason" if why_active else f"❓ Why {signal}?"
+        if st.button(why_label, key="btn_why_signal", use_container_width=True, type="secondary" if why_active else "primary", help="Click to view detailed chart confluence breakdown and why this decision was made"):
+            st.session_state["show_why_signal"] = not why_active
+            st.rerun()
+
+    # Dedicated AI Decision Breakdown & Chart Rationale Explainer
+    if st.session_state.get("show_why_signal", False):
+        dec_summary = plan.get("decision_summary", "")
+        rationale = plan.get("detailed_rationale", {})
+        c_score = plan.get("confluence_score", 0)
+        c_color = "#00E676" if direction == "BUY" else ("#FF1744" if direction == "SELL" else "#FFD600")
+
+        st.markdown(f"""
+        <div style="background-color: #161B22; border: 1px solid #30363D; border-left: 5px solid {c_color}; border-radius: 8px; padding: 14px 18px; margin-top: 10px; margin-bottom: 15px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                <span style="font-size: 16px; font-weight: bold; color: #ECEFF1;">
+                    🔍 Chart Decision Analysis: Why is the signal {signal}?
+                </span>
+                <span style="font-size: 12px; font-weight: bold; color: {c_color}; background: rgba(255, 255, 255, 0.05); padding: 3px 10px; border-radius: 5px; border: 1px solid {c_color};">
+                    Confluence Score: {c_score} / 100
+                </span>
+            </div>
+            <div style="font-size: 14px; color: #C9D1D9; line-height: 1.6; background: rgba(0,0,0,0.3); padding: 10px 14px; border-radius: 6px; border-left: 3px solid {c_color};">
+                {dec_summary}
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        w_col1, w_col2 = st.columns(2)
+        with w_col1:
+            st.markdown("<h4 style='color: #00E5FF; margin: 4px 0 8px 0; font-size: 14px;'>📈 1. Macro Trend (1h / 15m)</h4>", unsafe_allow_html=True)
+            for item in rationale.get("macro", []):
+                b_col = "#00E676" if item["status"]=="BULLISH" else ("#FF1744" if item["status"]=="BEARISH" else "#FFD600")
+                b_bg = "rgba(0, 230, 118, 0.15)" if item["status"]=="BULLISH" else ("rgba(255, 23, 68, 0.15)" if item["status"]=="BEARISH" else "rgba(255, 214, 0, 0.15)")
+                pts_t = f"+{item['points']}" if item['points'] > 0 else str(item['points'])
+                st.markdown(f"""
+                <div style="background: #0D1117; border: 1px solid #30363D; border-radius: 6px; padding: 7px 12px; margin-bottom: 6px; display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <span style="font-weight: bold; color: #ECEFF1; font-size: 13px;">{item['factor']}</span><br>
+                        <span style="color: #8B949E; font-size: 12px;">{item['detail']}</span>
+                    </div>
+                    <span style="background: {b_bg}; color: {b_col}; font-weight: bold; font-size: 11px; padding: 2px 7px; border-radius: 4px;">{item['status']} ({pts_t} pts)</span>
+                </div>
+                """, unsafe_allow_html=True)
+
+            st.markdown("<h4 style='color: #00E5FF; margin: 10px 0 8px 0; font-size: 14px;'>⚡ 2. Momentum & Velocity (15m)</h4>", unsafe_allow_html=True)
+            for item in rationale.get("structure", []):
+                b_col = "#00E676" if item["status"]=="BULLISH" else ("#FF1744" if item["status"]=="BEARISH" else "#FFD600")
+                b_bg = "rgba(0, 230, 118, 0.15)" if item["status"]=="BULLISH" else ("rgba(255, 23, 68, 0.15)" if item["status"]=="BEARISH" else "rgba(255, 214, 0, 0.15)")
+                pts_t = f"+{item['points']}" if item['points'] > 0 else str(item['points'])
+                st.markdown(f"""
+                <div style="background: #0D1117; border: 1px solid #30363D; border-radius: 6px; padding: 7px 12px; margin-bottom: 6px; display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <span style="font-weight: bold; color: #ECEFF1; font-size: 13px;">{item['factor']}</span><br>
+                        <span style="color: #8B949E; font-size: 12px;">{item['detail']}</span>
+                    </div>
+                    <span style="background: {b_bg}; color: {b_col}; font-weight: bold; font-size: 11px; padding: 2px 7px; border-radius: 4px;">{item['status']} ({pts_t} pts)</span>
+                </div>
+                """, unsafe_allow_html=True)
+
+        with w_col2:
+            st.markdown("<h4 style='color: #00E5FF; margin: 4px 0 8px 0; font-size: 14px;'>🎯 3. Intraday Execution & Trigger (5m / 1m)</h4>", unsafe_allow_html=True)
+            for item in rationale.get("execution", []):
+                b_col = "#00E676" if item["status"]=="BULLISH" else ("#FF1744" if item["status"]=="BEARISH" else "#FFD600")
+                b_bg = "rgba(0, 230, 118, 0.15)" if item["status"]=="BULLISH" else ("rgba(255, 23, 68, 0.15)" if item["status"]=="BEARISH" else "rgba(255, 214, 0, 0.15)")
+                pts_t = f"+{item['points']}" if item['points'] > 0 else str(item['points'])
+                st.markdown(f"""
+                <div style="background: #0D1117; border: 1px solid #30363D; border-radius: 6px; padding: 7px 12px; margin-bottom: 6px; display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <span style="font-weight: bold; color: #ECEFF1; font-size: 13px;">{item['factor']}</span><br>
+                        <span style="color: #8B949E; font-size: 12px;">{item['detail']}</span>
+                    </div>
+                    <span style="background: {b_bg}; color: {b_col}; font-weight: bold; font-size: 11px; padding: 2px 7px; border-radius: 4px;">{item['status']} ({pts_t} pts)</span>
+                </div>
+                """, unsafe_allow_html=True)
+
+            st.markdown("<h4 style='color: #00E5FF; margin: 10px 0 8px 0; font-size: 14px;'>🌊 4. Order Flow & Key Chart Levels</h4>", unsafe_allow_html=True)
+            for item in (rationale.get("order_flow", []) + rationale.get("levels", [])):
+                b_col = "#00E676" if item["status"]=="BULLISH" else ("#FF1744" if item["status"]=="BEARISH" else "#FFD600")
+                b_bg = "rgba(0, 230, 118, 0.15)" if item["status"]=="BULLISH" else ("rgba(255, 23, 68, 0.15)" if item["status"]=="BEARISH" else "rgba(255, 214, 0, 0.15)")
+                st.markdown(f"""
+                <div style="background: #0D1117; border: 1px solid #30363D; border-radius: 6px; padding: 7px 12px; margin-bottom: 6px; display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <span style="font-weight: bold; color: #ECEFF1; font-size: 13px;">{item['factor']}</span><br>
+                        <span style="color: #8B949E; font-size: 12px;">{item['detail']}</span>
+                    </div>
+                    <span style="background: {b_bg}; color: {b_col}; font-weight: bold; font-size: 11px; padding: 2px 7px; border-radius: 4px;">{item['status']}</span>
+                </div>
+                """, unsafe_allow_html=True)
 
     entry_p = float(plan.get("entry_price", 0.0))
     sl_p = float(plan.get("stop_loss", 0.0))

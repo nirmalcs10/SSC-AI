@@ -77,9 +77,16 @@ class ConfluenceStrategy:
         fvgs = LevelDetector.detect_fair_value_gaps(exec_ref)
         obs = LevelDetector.detect_order_blocks(exec_ref)
 
-        # Multi-Timeframe Scoring System (-100 to +100)
+        # Multi-Timeframe Scoring System (-100 to +100) & Structured Rationale
         score = 0
         reasons = []
+        detailed_rationale = {
+            "macro": [],
+            "structure": [],
+            "execution": [],
+            "order_flow": [],
+            "levels": []
+        }
 
         # 1. Macro Timeframe Analysis (35 Points)
         if df_macro is not None and len(df_macro) >= 20:
@@ -91,18 +98,50 @@ class ConfluenceStrategy:
             if macro_close > macro_ema200 and macro_close > macro_ema50:
                 score += 20
                 reasons.append(f"{macro_tf.upper()}: Strong Bullish Trend (Trading above 50 & 200 EMA)")
+                detailed_rationale["macro"].append({
+                    "factor": f"{macro_tf.upper()} 50 & 200 EMA",
+                    "status": "BULLISH",
+                    "detail": f"Price ₹{macro_close:,.2f} is above 50 EMA (₹{macro_ema50:,.2f}) & 200 EMA (₹{macro_ema200:,.2f})",
+                    "points": 20
+                })
             elif macro_close < macro_ema200 and macro_close < macro_ema50:
                 score -= 20
                 reasons.append(f"{macro_tf.upper()}: Strong Bearish Trend (Trading below 50 & 200 EMA)")
+                detailed_rationale["macro"].append({
+                    "factor": f"{macro_tf.upper()} 50 & 200 EMA",
+                    "status": "BEARISH",
+                    "detail": f"Price ₹{macro_close:,.2f} is below 50 EMA (₹{macro_ema50:,.2f}) & 200 EMA (₹{macro_ema200:,.2f})",
+                    "points": -20
+                })
+            else:
+                detailed_rationale["macro"].append({
+                    "factor": f"{macro_tf.upper()} 50 & 200 EMA",
+                    "status": "NEUTRAL",
+                    "detail": f"Price ₹{macro_close:,.2f} is sandwiched between 50 EMA (₹{macro_ema50:,.2f}) & 200 EMA (₹{macro_ema200:,.2f})",
+                    "points": 0
+                })
 
             if macro_st_dir == 1:
                 score += 15
                 reasons.append(f"{macro_tf.upper()}: Supertrend is Bullish (Green)")
+                detailed_rationale["macro"].append({
+                    "factor": f"{macro_tf.upper()} Supertrend",
+                    "status": "BULLISH",
+                    "detail": "Supertrend is Green providing dynamic ascending support",
+                    "points": 15
+                })
             else:
                 score -= 15
                 reasons.append(f"{macro_tf.upper()}: Supertrend is Bearish (Red)")
+                detailed_rationale["macro"].append({
+                    "factor": f"{macro_tf.upper()} Supertrend",
+                    "status": "BEARISH",
+                    "detail": "Supertrend is Red acting as dynamic overhead resistance",
+                    "points": -15
+                })
 
         # 2. Structural Timeframe Analysis (30 Points)
+        struct_rsi = 50.0
         if df_struct is not None and len(df_struct) >= 15:
             struct_close = float(df_struct["close"].iloc[-1])
             struct_ema9 = float(df_struct["ema_9"].iloc[-1])
@@ -112,16 +151,47 @@ class ConfluenceStrategy:
             if struct_ema9 > struct_ema21:
                 score += 15
                 reasons.append(f"{struct_tf.upper()}: 9 EMA is above 21 EMA (Upward Momentum)")
+                detailed_rationale["structure"].append({
+                    "factor": f"{struct_tf.upper()} 9/21 EMA Alignment",
+                    "status": "BULLISH",
+                    "detail": f"Fast 9 EMA (₹{struct_ema9:,.2f}) is above Slow 21 EMA (₹{struct_ema21:,.2f})",
+                    "points": 15
+                })
             else:
                 score -= 15
                 reasons.append(f"{struct_tf.upper()}: 9 EMA is below 21 EMA (Downward Momentum)")
+                detailed_rationale["structure"].append({
+                    "factor": f"{struct_tf.upper()} 9/21 EMA Alignment",
+                    "status": "BEARISH",
+                    "detail": f"Fast 9 EMA (₹{struct_ema9:,.2f}) is below Slow 21 EMA (₹{struct_ema21:,.2f})",
+                    "points": -15
+                })
 
             if struct_rsi > 55:
                 score += 15
                 reasons.append(f"{struct_tf.upper()}: RSI at {struct_rsi:.1f} shows solid Bullish momentum")
+                detailed_rationale["structure"].append({
+                    "factor": f"{struct_tf.upper()} RSI Momentum",
+                    "status": "BULLISH",
+                    "detail": f"RSI is at {struct_rsi:.1f} (>55) indicating solid bullish buying velocity",
+                    "points": 15
+                })
             elif struct_rsi < 45:
                 score -= 15
                 reasons.append(f"{struct_tf.upper()}: RSI at {struct_rsi:.1f} shows solid Bearish pressure")
+                detailed_rationale["structure"].append({
+                    "factor": f"{struct_tf.upper()} RSI Momentum",
+                    "status": "BEARISH",
+                    "detail": f"RSI is at {struct_rsi:.1f} (<45) indicating active selling pressure",
+                    "points": -15
+                })
+            else:
+                detailed_rationale["structure"].append({
+                    "factor": f"{struct_tf.upper()} RSI Momentum",
+                    "status": "NEUTRAL",
+                    "detail": f"RSI is at {struct_rsi:.1f} (in neutral 45-55 chop range)",
+                    "points": 0
+                })
 
         # 3. Execution & Trigger Timeframe Analysis (35 Points)
         if df_exec is not None and len(df_exec) >= 10:
@@ -132,9 +202,21 @@ class ConfluenceStrategy:
             if exec_close > exec_vwap:
                 score += 20
                 reasons.append(f"{exec_tf.upper()}: Price is holding above Intraday VWAP (Buyers in control)")
+                detailed_rationale["execution"].append({
+                    "factor": f"{exec_tf.upper()} Intraday VWAP",
+                    "status": "BULLISH",
+                    "detail": f"Price ₹{exec_close:,.2f} is holding above institutional VWAP ₹{exec_vwap:,.2f}",
+                    "points": 20
+                })
             else:
                 score -= 20
                 reasons.append(f"{exec_tf.upper()}: Price is below Intraday VWAP (Sellers in control)")
+                detailed_rationale["execution"].append({
+                    "factor": f"{exec_tf.upper()} Intraday VWAP",
+                    "status": "BEARISH",
+                    "detail": f"Price ₹{exec_close:,.2f} is below institutional VWAP ₹{exec_vwap:,.2f}",
+                    "points": -20
+                })
 
             # Check candle trigger (rejection wick or engulfing)
             last_c = df_exec.iloc[-1]
@@ -149,37 +231,137 @@ class ConfluenceStrategy:
             if lower_wick > body * 1.3:
                 score += 15
                 reasons.append(f"{exec_tf.upper()}: Strong Lower Rejection Wick (Demand buying support)")
+                detailed_rationale["execution"].append({
+                    "factor": "Candle Wick Action",
+                    "status": "BULLISH",
+                    "detail": "Long lower shadow demonstrates aggressive dip-buying absorption",
+                    "points": 15
+                })
             elif upper_wick > body * 1.3:
                 score -= 15
                 reasons.append(f"{exec_tf.upper()}: Strong Upper Rejection Wick (Supply rejection at resistance)")
+                detailed_rationale["execution"].append({
+                    "factor": "Candle Wick Action",
+                    "status": "BEARISH",
+                    "detail": "Long upper shadow demonstrates supply rejection capping higher prices",
+                    "points": -15
+                })
+            else:
+                detailed_rationale["execution"].append({
+                    "factor": "Candle Wick Action",
+                    "status": "NEUTRAL",
+                    "detail": "Standard candle body without extreme wick rejection",
+                    "points": 0
+                })
 
         # 4. Live Quote & Order Flow Confluence (10 Points)
+        of_ratio = 50.0
         if live_quote and "order_flow_ratio" in live_quote:
-            of_ratio = live_quote["order_flow_ratio"]
+            of_ratio = float(live_quote["order_flow_ratio"])
             if of_ratio >= 60.0:
                 score += 10
                 reasons.append(f"Live Order Flow: Strong Buyer Dominance ({of_ratio}% Bids vs Asks)")
+                detailed_rationale["order_flow"].append({
+                    "factor": "Live Order Flow Depth",
+                    "status": "BULLISH",
+                    "detail": f"Buyer dominance with {of_ratio:.1f}% bids vs {100 - of_ratio:.1f}% asks",
+                    "points": 10
+                })
             elif of_ratio <= 40.0:
                 score -= 10
                 reasons.append(f"Live Order Flow: Strong Seller Dominance ({100 - of_ratio:.1f}% Asks vs Bids)")
+                detailed_rationale["order_flow"].append({
+                    "factor": "Live Order Flow Depth",
+                    "status": "BEARISH",
+                    "detail": f"Seller dominance with {100 - of_ratio:.1f}% asks vs {of_ratio:.1f}% bids",
+                    "points": -10
+                })
+            else:
+                detailed_rationale["order_flow"].append({
+                    "factor": "Live Order Flow Depth",
+                    "status": "NEUTRAL",
+                    "detail": f"Balanced exchange order flow with {of_ratio:.1f}% bids vs {100 - of_ratio:.1f}% asks",
+                    "points": 0
+                })
 
-        # Determine Signal Classification
+        # 5. Key Levels (CPR & S/R Zones)
+        cpr_tc = float(cpr_data.get("tc", 0.0))
+        cpr_bc = float(cpr_data.get("bc", 0.0))
+        if current_price > cpr_tc and cpr_tc > 0:
+            detailed_rationale["levels"].append({
+                "factor": "Central Pivot Range (CPR)",
+                "status": "BULLISH",
+                "detail": f"Price (₹{current_price:,.2f}) is trading above Top Central Pivot (₹{cpr_tc:,.2f})",
+                "points": 0
+            })
+        elif current_price < cpr_bc and cpr_bc > 0:
+            detailed_rationale["levels"].append({
+                "factor": "Central Pivot Range (CPR)",
+                "status": "BEARISH",
+                "detail": f"Price (₹{current_price:,.2f}) is trading below Bottom Central Pivot (₹{cpr_bc:,.2f})",
+                "points": 0
+            })
+        else:
+            detailed_rationale["levels"].append({
+                "factor": "Central Pivot Range (CPR)",
+                "status": "NEUTRAL",
+                "detail": f"Price is trading inside CPR consolidation band (₹{cpr_bc:,.2f} - ₹{cpr_tc:,.2f})",
+                "points": 0
+            })
+
+        closest_supp = sr_zones["supports"][0]["level"] if sr_zones["supports"] else None
+        closest_res = sr_zones["resistances"][0]["level"] if sr_zones["resistances"] else None
+        detailed_rationale["levels"].append({
+            "factor": "Support / Resistance",
+            "status": "NEUTRAL",
+            "detail": f"Nearest Support: ₹{closest_supp or 'N/A'} | Nearest Resistance: ₹{closest_res or 'N/A'}",
+            "points": 0
+        })
+
+        # Determine Signal Classification & Natural Language Explanation
         if score >= CONFLUENCE_BUY_THRESHOLD:
             signal = "STRONG BUY"
             direction = "BUY"
+            decision_summary = (
+                f"🟢 STRONG BUY DECISION (Score: {score}/100): "
+                f"High-probability bullish trend confluence verified across macro and intraday timeframes. "
+                f"Price is trading above 50/200 EMAs and Intraday VWAP, with 15m 9 EMA above 21 EMA (RSI: {struct_rsi:.1f}). "
+                f"Buyers hold market dominance ({of_ratio:.1f}% bids). Look for long/CE entries on pullbacks with SL below support."
+            )
         elif score >= 35:
             signal = "BUY"
             direction = "BUY"
+            decision_summary = (
+                f"🟢 BUY DECISION (Score: {score}/100): "
+                f"Bullish momentum setup active. The primary trend and intraday moving averages are aligned upward. "
+                f"Price is holding above VWAP with positive RSI ({struct_rsi:.1f}). Maintain strict SL below trigger low."
+            )
         elif score <= CONFLUENCE_SELL_THRESHOLD:
             signal = "STRONG SELL"
             direction = "SELL"
+            decision_summary = (
+                f"🔴 STRONG SELL DECISION (Score: {score}/100): "
+                f"High-probability bearish breakdown verified. Price has broken below key 50/200 EMAs and Intraday VWAP, "
+                f"accompanied by downward 9/21 EMA cross and weak RSI ({struct_rsi:.1f}). Sellers dominate order flow. Look for short/PE entries."
+            )
         elif score <= -35:
             signal = "SELL"
             direction = "SELL"
+            decision_summary = (
+                f"🔴 SELL DECISION (Score: {score}/100): "
+                f"Bearish momentum setup active. Intraday price is trading below VWAP with downward moving average pressure. "
+                f"Maintain strict SL above trigger high."
+            )
         else:
             signal = "WAIT / NO TRADE"
             direction = "NEUTRAL"
             reasons.append("Conflicting timeframe signals or market consolidation. Wait for structural breakout.")
+            decision_summary = (
+                f"⏳ WAIT / NO TRADE DECISION (Score: {score}/100): "
+                f"The algorithm detected conflicting timeframe signals or sideways equilibrium (Confluence score is between -35 and +35). "
+                f"Higher timeframe trend is not cleanly supported by intraday order flow, or price is trapped in CPR chop. "
+                f"Patience pays in trading: Wait for a decisive breakout above resistance or below support before committing capital."
+            )
 
         # Calculate Entry, Stop Loss, and Targets
         atr_val = float(df_exec["atr"].iloc[-1]) if df_exec is not None else (current_price * 0.003)
@@ -345,5 +527,7 @@ class ConfluenceStrategy:
             "obs": obs,
             "fno_recommendation": fno_rec,
             "reasons": reasons,
+            "detailed_rationale": detailed_rationale,
+            "decision_summary": decision_summary,
             "analyzed_timeframes": list(analyzed_tf.keys())
         }
