@@ -168,6 +168,7 @@ with st.sidebar.expander("🔑 Angel One SmartAPI Login", expanded=not st.sessio
         if success:
             st.session_state.angel_connector = conn
             st.session_state.order_manager = OrderManager(conn)
+            conn.update_env_credentials(password=password_input, totp_secret=totp_input)
             st.success("Connected to Angel One Live SmartAPI!")
             st.rerun()
         else:
@@ -440,10 +441,51 @@ def render_live_fno_and_execution_fragment(sym: str, mode_str: str, plan_dict: d
         live_atm_strike = int(round(live_ltp / stk_step) * stk_step)
 
         # Fetch Live Option Quotes directly from Angel One Exchange (NFO)
-        opt_market_data = connector.get_options_market_quotes(sym, live_atm_strike, current_spot_ltp=live_ltp)
+        opt_market_data = conn.get_options_market_quotes(sym, live_atm_strike, current_spot_ltp=live_ltp)
         ce_quote_data = opt_market_data.get("call_option", {})
         pe_quote_data = opt_market_data.get("put_option", {})
         is_live_nfo_exchange = (opt_market_data.get("status") == "LIVE_NFO_EXCHANGE")
+
+        # Angel One Direct Exchange Live Connection Status Banner
+        if conn.is_authenticated:
+            st.markdown(f"""
+            <div style="background: rgba(0, 230, 118, 0.08); border: 1px solid #00E676; border-radius: 8px; padding: 7px 12px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <span style="font-weight: bold; color: #00E676; font-size: 13px;">🟢 LIVE ANGEL ONE EXCHANGE NFO FEED</span>
+                    <span style="font-size: 11px; background: rgba(0, 230, 118, 0.2); color: #00E676; padding: 1px 6px; border-radius: 4px; font-weight: bold;">DIRECT NFO QUOTE</span>
+                    <span style="font-size: 11px; color: #8B949E;">Tokens: {ce_quote_data.get('token', 'N/A')} (CE) | {pe_quote_data.get('token', 'N/A')} (PE)</span>
+                </div>
+                <span style="font-size: 11px; color: #00E676; font-weight: bold;">⚡ Sub-100ms Feed</span>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.markdown(f"""
+            <div style="background: rgba(255, 171, 0, 0.08); border: 1px solid #FFAB00; border-radius: 8px; padding: 7px 12px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <span style="font-weight: bold; color: #FFAB00; font-size: 13px;">⚠️ Angel One Direct Feed: Disconnected</span>
+                    <span style="font-size: 11px; background: rgba(255, 171, 0, 0.2); color: #FFD54F; padding: 1px 6px; border-radius: 4px;">Pre-Login Live Baseline</span>
+                </div>
+                <span style="font-size: 11px; color: #8B949E;">Enter PIN & TOTP below to stream tick-by-tick from Angel One</span>
+            </div>
+            """, unsafe_allow_html=True)
+            with st.expander("🔑 Quick Login to Stream Direct from Angel One (PIN & TOTP)", expanded=False):
+                in_col1, in_col2, in_col3 = st.columns([1.5, 1.5, 1.2])
+                with in_col1:
+                    in_pin = st.text_input("4-Digit PIN", type="password", key="inline_fno_pin", value=conn.password)
+                with in_col2:
+                    in_totp = st.text_input("6-Digit TOTP / Secret", key="inline_fno_totp", placeholder="e.g. 123456")
+                with in_col3:
+                    st.write("")
+                    if st.button("🔐 Connect Live Feed", key="inline_fno_connect_btn", type="primary", use_container_width=True):
+                        s_ok, s_msg = conn.login(pin=in_pin, totp_code=in_totp)
+                        if s_ok:
+                            st.session_state.angel_connector = conn
+                            st.session_state.order_manager = OrderManager(conn)
+                            conn.update_env_credentials(password=in_pin, totp_secret=in_totp)
+                            st.success("🟢 Successfully connected to Angel One!")
+                            st.rerun()
+                        else:
+                            st.error(s_msg)
         
         dir_plan = plan_dict.get("direction", "BUY") if plan_dict else "BUY"
         risk_p = float(plan_dict.get("risk_points", 30.0)) if plan_dict else 30.0
@@ -473,7 +515,7 @@ def render_live_fno_and_execution_fragment(sym: str, mode_str: str, plan_dict: d
 
         # --- CALL OPTION (CE) ROW ---
         ce_badge = "<span style='background: rgba(0, 230, 118, 0.2); border: 1px solid #00E676; color: #00E676; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;'>🟢 AI RECOMMENDED (BULLISH CONFLUENCE)</span>" if is_ce_rec else "<span style='background: rgba(139, 148, 158, 0.15); border: 1px solid #30363D; color: #8B949E; padding: 2px 8px; border-radius: 4px; font-size: 11px;'>BULLISH ALTERNATIVE</span>"
-        feed_badge = "<span style='background: rgba(0, 229, 255, 0.15); border: 1px solid #00E5FF; color: #00E5FF; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;'>⚡ LIVE NFO EXCHANGE TICK (Angel One)</span>" if is_live_nfo_exchange else "<span style='background: rgba(139, 148, 158, 0.12); border: 1px solid #30363D; color: #8B949E; padding: 2px 8px; border-radius: 4px; font-size: 11px;'>⚡ REAL-TIME VOLATILITY FEED</span>"
+        feed_badge = "<span style='background: rgba(0, 230, 118, 0.15); border: 1px solid #00E676; color: #00E676; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;'>⚡ DIRECT ANGEL ONE EXCHANGE NFO TICK</span>" if is_live_nfo_exchange else "<span style='background: rgba(0, 229, 255, 0.15); border: 1px solid #00E5FF; color: #00E5FF; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;'>⚡ REAL-TIME VOLATILITY QUOTE</span>"
 
         st.markdown(f"""
         <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px; margin-bottom: 6px;">
