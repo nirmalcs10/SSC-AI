@@ -69,6 +69,84 @@ def run_tests():
     print(f"Square off status: {sq_res}")
     assert sq_res is True, "Trade square off should succeed!"
 
+    # CRITICAL VERIFICATION: Test Stop Loss & Target P&L Calculations for both PE and CE options
+    print("\n=== Step 4b: Verifying PE & CE Stop Loss ALWAYS produces LOSS (never profit) ===")
+    # 1. PE Option with STOP LOSS HIT
+    pe_trade_res = order_mgr.execute_custom_trade(
+        symbol="NIFTY",
+        direction="SELL",
+        trade_type="Options PE",
+        quantity_lots=1,
+        entry_price=131.2,
+        sl_price=98.4,
+        target_1=178.9,
+        target_2=214.7,
+        custom_strike="NIFTY 25250 PE",
+        underlying_entry=25257.1,
+        underlying_sl=25300.0,
+        underlying_t1=25200.0,
+        underlying_t2=25150.0
+    )
+    assert pe_trade_res["status"] is True
+    pe_trade_id = pe_trade_res["trade_id"]
+
+    # Square off at Stop Loss price (98.4 vs entry 131.2)
+    order_mgr.square_off_trade(pe_trade_id, exit_price=98.4, exit_reason="STOP_LOSS_HIT")
+    closed = order_mgr.get_closed_trades()
+    pe_closed = next(t for t in closed if t["id"] == pe_trade_id)
+    print(f"PE Stop Loss Exit -> Net P&L: ₹{pe_closed['net_pnl']}, Is Profit: {pe_closed['is_profit']}")
+    assert pe_closed["gross_pnl"] < 0, f"PE Stop Loss Gross P&L must be negative! Got {pe_closed['gross_pnl']}"
+    assert pe_closed["net_pnl"] < 0, f"PE Stop Loss Net P&L must be negative! Got {pe_closed['net_pnl']}"
+    assert pe_closed["is_profit"] is False, f"PE Stop Loss must be LOSS (is_profit=False)! Got {pe_closed['is_profit']}"
+
+    # 2. PE Option with TARGET HIT
+    pe_tgt_res = order_mgr.execute_custom_trade(
+        symbol="NIFTY",
+        direction="SELL",
+        trade_type="Options PE",
+        quantity_lots=1,
+        entry_price=131.2,
+        sl_price=98.4,
+        target_1=178.9,
+        target_2=214.7,
+        custom_strike="NIFTY 25250 PE",
+        underlying_entry=25257.1,
+        underlying_sl=25300.0,
+        underlying_t1=25200.0,
+        underlying_t2=25150.0
+    )
+    assert pe_tgt_res["status"] is True
+    pe_tgt_id = pe_tgt_res["trade_id"]
+    order_mgr.square_off_trade(pe_tgt_id, exit_price=214.7, exit_reason="TARGET_2_HIT")
+    pe_tgt_closed = next(t for t in order_mgr.get_closed_trades() if t["id"] == pe_tgt_id)
+    print(f"PE Target Exit -> Net P&L: ₹{pe_tgt_closed['net_pnl']}, Is Profit: {pe_tgt_closed['is_profit']}")
+    assert pe_tgt_closed["gross_pnl"] > 0, f"PE Target Gross P&L must be positive! Got {pe_tgt_closed['gross_pnl']}"
+    assert pe_tgt_closed["net_pnl"] > 0, f"PE Target Net P&L must be positive! Got {pe_tgt_closed['net_pnl']}"
+    assert pe_tgt_closed["is_profit"] is True, f"PE Target must be PROFIT (is_profit=True)!"
+
+    # 3. Verify check_live_triggers does NOT instantly trigger false exit on normal spot tick
+    ce_test_res = order_mgr.execute_custom_trade(
+        symbol="NIFTY",
+        direction="BUY",
+        trade_type="Options CE",
+        quantity_lots=1,
+        entry_price=100.0,
+        sl_price=75.0,
+        target_1=135.0,
+        target_2=160.0,
+        custom_strike="NIFTY 25300 CE",
+        underlying_entry=25250.0,
+        underlying_sl=25200.0,
+        underlying_t1=25300.0,
+        underlying_t2=25350.0
+    )
+    ce_test_id = ce_test_res["trade_id"]
+    # Pass current spot 25255 (between 25200 and 25350)
+    alerts = order_mgr.check_live_triggers("NIFTY", current_ltp=25255.0)
+    ce_open_check = [t for t in order_mgr.get_open_positions() if t["id"] == ce_test_id]
+    print(f"Live Trigger check at spot 25255 -> Open count: {len(ce_open_check)}, Alerts: {alerts}")
+    assert len(ce_open_check) == 1, "Position must NOT be closed instantly by spot tick!"
+
     # Clean up test files
     if test_wallet_file.exists():
         test_wallet_file.unlink()

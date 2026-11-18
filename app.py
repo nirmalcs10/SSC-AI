@@ -525,6 +525,16 @@ def render_live_fno_and_execution_fragment(sym: str, mode_str: str, plan_dict: d
             exec_t1_p = live_opt_t1 if 'live_opt_t1' in locals() else exec_entry_p * 1.35
             exec_t2_p = live_opt_t2 if 'live_opt_t2' in locals() else exec_entry_p * 1.60
             invested_amount = round(total_contracts * exec_entry_p, 2)
+
+            u_entry = float(live_ltp)
+            if exec_direction == "BUY":
+                u_sl = float(plan_dict.get("stop_loss") or round(live_ltp * 0.996, 2))
+                u_t1 = float(plan_dict.get("target_1") or round(live_ltp * 1.004, 2))
+                u_t2 = float(plan_dict.get("target_2") or round(live_ltp * 1.008, 2))
+            else:
+                u_sl = float(plan_dict.get("stop_loss") or round(live_ltp * 1.004, 2))
+                u_t1 = float(plan_dict.get("target_1") or round(live_ltp * 0.996, 2))
+                u_t2 = float(plan_dict.get("target_2") or round(live_ltp * 0.992, 2))
         else:
             trade_shares = st.number_input("Shares Quantity", min_value=1, max_value=5000, value=10, step=1, key=f"shares_{sym}")
             total_contracts = int(trade_shares)
@@ -535,6 +545,10 @@ def render_live_fno_and_execution_fragment(sym: str, mode_str: str, plan_dict: d
             exec_t1_p = round(exec_entry_p * (1.02 if exec_direction == "BUY" else 0.98), 2)
             exec_t2_p = round(exec_entry_p * (1.04 if exec_direction == "BUY" else 0.96), 2)
             invested_amount = round(total_contracts * exec_entry_p, 2)
+            u_entry = float(live_ltp)
+            u_sl = exec_sl_p
+            u_t1 = exec_t1_p
+            u_t2 = exec_t2_p
 
     with exec_col3:
         st.write("")
@@ -552,7 +566,11 @@ def render_live_fno_and_execution_fragment(sym: str, mode_str: str, plan_dict: d
                     sl_price=exec_sl_p,
                     target_1=exec_t1_p,
                     target_2=exec_t2_p,
-                    custom_strike=exec_trading_sym
+                    custom_strike=exec_trading_sym,
+                    underlying_entry=u_entry,
+                    underlying_sl=u_sl,
+                    underlying_t1=u_t1,
+                    underlying_t2=u_t2
                 )
                 if exec_res.get("status"):
                     st.success(exec_res.get("message"))
@@ -596,7 +614,8 @@ def render_live_fno_and_execution_fragment(sym: str, mode_str: str, plan_dict: d
             with col_pos2:
                 st.write("")
                 if st.button(f"❌ Square Off #{t['id']}", key=f"sq_live_{t['id']}", use_container_width=True):
-                    ord_mgr.square_off_trade(t['id'], live_ltp, exit_reason="MANUAL_SQUARE_OFF")
+                    opt_exit = t.get("current_price", t["entry_price"]) if (t.get("is_option") or t.get("trade_type", "").startswith("Options")) else live_ltp
+                    ord_mgr.square_off_trade(t['id'], opt_exit, exit_reason="MANUAL_SQUARE_OFF")
                     st.rerun()
 
 # Call the 1-second live streaming fragment
@@ -782,7 +801,11 @@ with tab_positions:
             st.write("")
             st.write("")
             if st.button("❌ Square Off Position", type="secondary"):
-                curr_p = live_quote.get("ltp", plan.get("current_price", 0.0))
+                trade_to_sq = next((t for t in open_trades if t["id"] == selected_trade_id), None)
+                if trade_to_sq and (trade_to_sq.get("is_option") or trade_to_sq.get("trade_type", "").startswith("Options")):
+                    curr_p = trade_to_sq.get("current_price", trade_to_sq["entry_price"])
+                else:
+                    curr_p = live_quote.get("ltp", plan.get("current_price", 0.0))
                 if st.session_state.order_manager.square_off_trade(selected_trade_id, curr_p, exit_reason="MANUAL_SQUARE_OFF"):
                     st.success(f"Position {selected_trade_id} squared off at ₹{curr_p}!")
                     st.rerun()

@@ -131,6 +131,11 @@ class OrderManager:
         is_index = symbol in INDEX_TOKENS
         fno = plan.get("fno_recommendation")
 
+        underlying_entry = float(plan.get("entry_price", 0.0))
+        underlying_sl = float(plan.get("stop_loss", 0.0))
+        underlying_t1 = float(plan.get("target_1", 0.0))
+        underlying_t2 = float(plan.get("target_2", 0.0))
+
         if is_index and fno:
             strike = fno["atm_strike"]
             opt_type = fno["type"] if fno["type"] in ("CE", "PE") else ("CE" if direction == "BUY" else "PE")
@@ -164,7 +169,11 @@ class OrderManager:
             sl_price=sl_price,
             target_1=target_1,
             target_2=target_2,
-            is_opt=is_opt
+            is_opt=is_opt,
+            underlying_entry=underlying_entry,
+            underlying_sl=underlying_sl,
+            underlying_t1=underlying_t1,
+            underlying_t2=underlying_t2
         )
 
     def execute_custom_trade(
@@ -177,7 +186,11 @@ class OrderManager:
         sl_price: float,
         target_1: float,
         target_2: float,
-        custom_strike: str = ""
+        custom_strike: str = "",
+        underlying_entry: float = 0.0,
+        underlying_sl: float = 0.0,
+        underlying_t1: float = 0.0,
+        underlying_t2: float = 0.0
     ) -> Dict[str, Any]:
         """
         Executes a 1-click paper trade on ANY index or equity with explicit parameters.
@@ -204,7 +217,11 @@ class OrderManager:
             sl_price=sl_price,
             target_1=target_1,
             target_2=target_2,
-            is_opt=is_opt
+            is_opt=is_opt,
+            underlying_entry=underlying_entry,
+            underlying_sl=underlying_sl,
+            underlying_t1=underlying_t1,
+            underlying_t2=underlying_t2
         )
 
     def _create_paper_trade(
@@ -219,7 +236,11 @@ class OrderManager:
         sl_price: float,
         target_1: float,
         target_2: float,
-        is_opt: bool
+        is_opt: bool,
+        underlying_entry: float = 0.0,
+        underlying_sl: float = 0.0,
+        underlying_t1: float = 0.0,
+        underlying_t2: float = 0.0
     ) -> Dict[str, Any]:
         """Internal helper to validate balance and open persistent trade record."""
         turnover = entry_price * total_qty
@@ -238,6 +259,7 @@ class OrderManager:
         trade_id = f"PAPER_{len(self.trades) + 1}"
 
         invested_capital = round(turnover, 2)
+        opt_type = ("CE" if "CE" in trade_type else ("PE" if "PE" in trade_type else ("CE" if direction == "BUY" else "PE"))) if is_opt else ""
 
         trade_record = {
             "id": trade_id,
@@ -249,6 +271,8 @@ class OrderManager:
             "trading_symbol": trading_symbol,
             "trade_type": trade_type,
             "direction": direction,
+            "is_option": is_opt,
+            "option_type": opt_type,
             "quantity": total_qty,
             "quantity_lots": quantity_lots,
             "entry_price": round(entry_price, 2),
@@ -256,6 +280,10 @@ class OrderManager:
             "stop_loss": round(sl_price, 2),
             "target_1": round(target_1, 2),
             "target_2": round(target_2, 2),
+            "underlying_entry": round(underlying_entry, 2),
+            "underlying_sl": round(underlying_sl, 2),
+            "underlying_t1": round(underlying_t1, 2),
+            "underlying_t2": round(underlying_t2, 2),
             "target_1_booked": False,
             "status": "OPEN",
             "current_price": round(entry_price, 2),
@@ -288,81 +316,180 @@ class OrderManager:
     def check_live_triggers(self, symbol: str, current_ltp: float) -> List[Dict[str, Any]]:
         """
         Evaluates open paper trades against the latest live tick price.
-        Automatically executes exits when Target or Stop Loss is reached!
+        Accurately maps spot index movements vs option strike premiums without cross-unit errors.
+        Guarantees that a Stop Loss hit ALWAYS records a LOSS.
         """
         alerts = []
         for t in self.trades:
             if t.get("status") == "OPEN" and t.get("symbol") == symbol:
-                direction = t.get("direction")
-                sl = t.get("stop_loss", 0.0)
-                t1 = t.get("target_1", 0.0)
-                t2 = t.get("target_2", 0.0)
-                entry = t.get("entry_price", 0.0)
+                is_opt = t.get("is_option", False) or t.get("trade_type", "").startswith("Options")
+                opt_type = t.get("option_type", "")
+                direction = t.get("direction", "BUY")
                 qty = t.get("quantity", 1)
-                invested = t.get("invested_capital") or (entry * qty)
+                entry_opt = t.get("entry_price", 0.0)
+                invested = t.get("invested_capital") or (entry_opt * qty)
 
-                # Update live price and unrealized P&L
-                if direction == "BUY":
-                    gross_pnl = (current_ltp - entry) * qty
-                    t["current_price"] = current_ltp
-                    t["gross_pnl"] = round(gross_pnl, 2)
+                u_entry = t.get("underlying_entry", 0.0)
+                u_sl = t.get("underlying_sl", 0.0)
+                u_t1 = t.get("underlying_t1", 0.0)
+                u_t2 = t.get("underlying_t2", 0.0)
+
+                opt_sl = t.get("stop_loss", 0.0)
+                opt_t1 = t.get("target_1", 0.0)
+                opt_t2 = t.get("target_2", 0.0)
+
+                if is_opt:
+                    # OPTION TRADE: Retail paper traders are Option BUYERS (Long CE or Long PE)
+                    # Dynamic option premium estimation with Delta ~ 0.50
+                    if u_entry > 0:
+                        spot_diff = current_ltp - u_entry
+                        if opt_type == "CE" or direction == "BUY":
+                            cur_opt_price = max(0.50, round(entry_opt + (0.50 * spot_diff), 2))
+                        else:  # PE or SELL Put direction
+                            cur_opt_price = max(0.50, round(entry_opt - (0.50 * spot_diff), 2))
+                    else:
+                        cur_opt_price = entry_opt
+
+                    t["current_price"] = cur_opt_price
+                    gross_pnl = round((cur_opt_price - entry_opt) * qty, 2)
+                    t["gross_pnl"] = gross_pnl
                     net_pnl = round(gross_pnl - t.get("charges", 20.0), 2)
                     t["net_pnl"] = net_pnl
                     t["return_pct"] = round((net_pnl / (invested + 1e-10)) * 100, 2)
-                    
-                    if current_ltp <= sl:
-                        self.square_off_trade(t["id"], exit_price=sl, exit_reason="STOP_LOSS_HIT")
-                        alerts.append({
-                            "type": "SL_HIT",
-                            "trade_id": t["id"],
-                            "message": f"STOP LOSS HIT on {t['trading_symbol']}! Exited at Rs.{sl:.2f}. Net Loss: Rs.{net_pnl:.2f} ({t['return_pct']}%)"
-                        })
-                    elif current_ltp >= t2:
-                        self.square_off_trade(t["id"], exit_price=t2, exit_reason="TARGET_2_HIT")
-                        alerts.append({
-                            "type": "T2_HIT",
-                            "trade_id": t["id"],
-                            "message": f"TARGET 2 REACHED on {t['trading_symbol']}! Full profit booked at Rs.{t2:.2f}. Net Profit: Rs.{net_pnl:.2f} (+{t['return_pct']}%)"
-                        })
-                    elif current_ltp >= t1 and not t.get("target_1_booked", False):
-                        t["target_1_booked"] = True
-                        t["stop_loss"] = entry
-                        alerts.append({
-                            "type": "T1_HIT",
-                            "trade_id": t["id"],
-                            "message": f"TARGET 1 HIT on {t['trading_symbol']} at Rs.{t1:.2f}! Trailing SL moved to Cost (Rs.{entry:.2f}). Risk eliminated!"
-                        })
 
-                elif direction == "SELL":
-                    gross_pnl = (entry - current_ltp) * qty
-                    t["current_price"] = current_ltp
-                    t["gross_pnl"] = round(gross_pnl, 2)
-                    net_pnl = round(gross_pnl - t.get("charges", 20.0), 2)
-                    t["net_pnl"] = net_pnl
-                    t["return_pct"] = round((net_pnl / (invested + 1e-10)) * 100, 2)
-                    
-                    if current_ltp >= sl:
-                        self.square_off_trade(t["id"], exit_price=sl, exit_reason="STOP_LOSS_HIT")
-                        alerts.append({
-                            "type": "SL_HIT",
-                            "trade_id": t["id"],
-                            "message": f"STOP LOSS HIT on {t['trading_symbol']}! Exited at Rs.{sl:.2f}. Net Loss: Rs.{net_pnl:.2f} ({t['return_pct']}%)"
-                        })
-                    elif current_ltp <= t2:
-                        self.square_off_trade(t["id"], exit_price=t2, exit_reason="TARGET_2_HIT")
-                        alerts.append({
-                            "type": "T2_HIT",
-                            "trade_id": t["id"],
-                            "message": f"TARGET 2 REACHED on {t['trading_symbol']}! Full profit booked at Rs.{t2:.2f}. Net Profit: Rs.{net_pnl:.2f} (+{t['return_pct']}%)"
-                        })
-                    elif current_ltp <= t1 and not t.get("target_1_booked", False):
-                        t["target_1_booked"] = True
-                        t["stop_loss"] = entry
-                        alerts.append({
-                            "type": "T1_HIT",
-                            "trade_id": t["id"],
-                            "message": f"TARGET 1 HIT on {t['trading_symbol']} at Rs.{t1:.2f}! Trailing SL moved to Cost (Rs.{entry:.2f})."
-                        })
+                    # Trigger logic using underlying spot levels
+                    if opt_type == "CE" or direction == "BUY":
+                        # BULLISH CALL: SL if spot <= u_sl; T2 if spot >= u_t2
+                        is_sl_hit = (current_ltp <= u_sl) if (u_sl > 0) else False
+                        is_t2_hit = (current_ltp >= u_t2) if (u_t2 > 0) else False
+                        is_t1_hit = (current_ltp >= u_t1) if (u_t1 > 0) else False
+
+                        if is_sl_hit:
+                            # Stop loss hit on Call Option -> Always exit at opt_sl (Loss)
+                            exit_p = min(opt_sl, entry_opt * 0.75) if opt_sl > 0 else entry_opt * 0.75
+                            self.square_off_trade(t["id"], exit_price=exit_p, exit_reason="STOP_LOSS_HIT")
+                            alerts.append({
+                                "type": "SL_HIT",
+                                "trade_id": t["id"],
+                                "message": f"STOP LOSS HIT on {t['trading_symbol']}! Exited at Rs.{exit_p:.2f}. Trade closed at Net Loss."
+                            })
+                        elif is_t2_hit:
+                            exit_p = max(opt_t2, entry_opt * 1.60) if opt_t2 > 0 else entry_opt * 1.60
+                            self.square_off_trade(t["id"], exit_price=exit_p, exit_reason="TARGET_2_HIT")
+                            alerts.append({
+                                "type": "T2_HIT",
+                                "trade_id": t["id"],
+                                "message": f"TARGET 2 REACHED on {t['trading_symbol']}! Full profit booked at Rs.{exit_p:.2f}."
+                            })
+                        elif is_t1_hit and not t.get("target_1_booked", False):
+                            t["target_1_booked"] = True
+                            t["underlying_sl"] = u_entry
+                            alerts.append({
+                                "type": "T1_HIT",
+                                "trade_id": t["id"],
+                                "message": f"TARGET 1 HIT on {t['trading_symbol']}! Trailing Stop Loss moved to Cost ({u_entry:,.2f})."
+                            })
+
+                    else:
+                        # BEARISH PUT (PE): SL if spot >= u_sl; T2 if spot <= u_t2
+                        is_sl_hit = (current_ltp >= u_sl) if (u_sl > 0) else False
+                        is_t2_hit = (current_ltp <= u_t2) if (u_t2 > 0) else False
+                        is_t1_hit = (current_ltp <= u_t1) if (u_t1 > 0) else False
+
+                        if is_sl_hit:
+                            # Stop loss hit on Put Option -> Always exit at opt_sl (Loss)
+                            exit_p = min(opt_sl, entry_opt * 0.75) if opt_sl > 0 else entry_opt * 0.75
+                            self.square_off_trade(t["id"], exit_price=exit_p, exit_reason="STOP_LOSS_HIT")
+                            alerts.append({
+                                "type": "SL_HIT",
+                                "trade_id": t["id"],
+                                "message": f"STOP LOSS HIT on {t['trading_symbol']}! Exited at Rs.{exit_p:.2f}. Trade closed at Net Loss."
+                            })
+                        elif is_t2_hit:
+                            exit_p = max(opt_t2, entry_opt * 1.60) if opt_t2 > 0 else entry_opt * 1.60
+                            self.square_off_trade(t["id"], exit_price=exit_p, exit_reason="TARGET_2_HIT")
+                            alerts.append({
+                                "type": "T2_HIT",
+                                "trade_id": t["id"],
+                                "message": f"TARGET 2 REACHED on {t['trading_symbol']}! Full profit booked at Rs.{exit_p:.2f}."
+                            })
+                        elif is_t1_hit and not t.get("target_1_booked", False):
+                            t["target_1_booked"] = True
+                            t["underlying_sl"] = u_entry
+                            alerts.append({
+                                "type": "T1_HIT",
+                                "trade_id": t["id"],
+                                "message": f"TARGET 1 HIT on {t['trading_symbol']}! Trailing Stop Loss moved to Cost ({u_entry:,.2f})."
+                            })
+
+                else:
+                    # EQUITY INTRADAY
+                    entry = entry_opt
+                    sl = opt_sl
+                    t1 = opt_t1
+                    t2 = opt_t2
+
+                    if direction == "BUY":
+                        gross_pnl = (current_ltp - entry) * qty
+                        t["current_price"] = current_ltp
+                        t["gross_pnl"] = round(gross_pnl, 2)
+                        net_pnl = round(gross_pnl - t.get("charges", 20.0), 2)
+                        t["net_pnl"] = net_pnl
+                        t["return_pct"] = round((net_pnl / (invested + 1e-10)) * 100, 2)
+
+                        if current_ltp <= sl:
+                            self.square_off_trade(t["id"], exit_price=sl, exit_reason="STOP_LOSS_HIT")
+                            alerts.append({
+                                "type": "SL_HIT",
+                                "trade_id": t["id"],
+                                "message": f"STOP LOSS HIT on {t['trading_symbol']}! Exited at Rs.{sl:.2f}. Net Loss: Rs.{abs(net_pnl):.2f}"
+                            })
+                        elif current_ltp >= t2:
+                            self.square_off_trade(t["id"], exit_price=t2, exit_reason="TARGET_2_HIT")
+                            alerts.append({
+                                "type": "T2_HIT",
+                                "trade_id": t["id"],
+                                "message": f"TARGET 2 REACHED on {t['trading_symbol']}! Booked at Rs.{t2:.2f}. Net Profit: Rs.{net_pnl:.2f}"
+                            })
+                        elif current_ltp >= t1 and not t.get("target_1_booked", False):
+                            t["target_1_booked"] = True
+                            t["stop_loss"] = entry
+                            alerts.append({
+                                "type": "T1_HIT",
+                                "trade_id": t["id"],
+                                "message": f"TARGET 1 HIT on {t['trading_symbol']} at Rs.{t1:.2f}!"
+                            })
+
+                    elif direction == "SELL":
+                        gross_pnl = (entry - current_ltp) * qty
+                        t["current_price"] = current_ltp
+                        t["gross_pnl"] = round(gross_pnl, 2)
+                        net_pnl = round(gross_pnl - t.get("charges", 20.0), 2)
+                        t["net_pnl"] = net_pnl
+                        t["return_pct"] = round((net_pnl / (invested + 1e-10)) * 100, 2)
+
+                        if current_ltp >= sl:
+                            self.square_off_trade(t["id"], exit_price=sl, exit_reason="STOP_LOSS_HIT")
+                            alerts.append({
+                                "type": "SL_HIT",
+                                "trade_id": t["id"],
+                                "message": f"STOP LOSS HIT on {t['trading_symbol']}! Exited at Rs.{sl:.2f}. Net Loss: Rs.{abs(net_pnl):.2f}"
+                            })
+                        elif current_ltp <= t2:
+                            self.square_off_trade(t["id"], exit_price=t2, exit_reason="TARGET_2_HIT")
+                            alerts.append({
+                                "type": "T2_HIT",
+                                "trade_id": t["id"],
+                                "message": f"TARGET 2 REACHED on {t['trading_symbol']}! Booked at Rs.{t2:.2f}. Net Profit: Rs.{net_pnl:.2f}"
+                            })
+                        elif current_ltp <= t1 and not t.get("target_1_booked", False):
+                            t["target_1_booked"] = True
+                            t["stop_loss"] = entry
+                            alerts.append({
+                                "type": "T1_HIT",
+                                "trade_id": t["id"],
+                                "message": f"TARGET 1 HIT on {t['trading_symbol']} at Rs.{t1:.2f}!"
+                            })
         if alerts:
             self.save_trades()
         return alerts
@@ -371,8 +498,10 @@ class OrderManager:
         """Square off an open virtual position, update balance, and record complete lifecycle & P&L."""
         for t in self.trades:
             if t.get("id") == trade_id and t.get("status") == "OPEN":
+                is_opt = t.get("is_option", False) or t.get("trade_type", "").startswith("Options")
+
                 # Protection against index price mistakenly passed for options
-                if t.get("trade_type", "").startswith("Options"):
+                if is_opt:
                     if exit_price > t["entry_price"] * 8 and exit_price > 1000:
                         logger.warning(f"Abnormal option exit price {exit_price} for entry {t['entry_price']}. Using Target 2 {t.get('target_2')}")
                         exit_price = float(t.get("target_2") or (t["entry_price"] * 1.5))
@@ -381,12 +510,17 @@ class OrderManager:
                 t["exit_price"] = round(exit_price, 2)
                 t["exit_time"] = datetime.datetime.now().strftime("%d-%b-%Y %H:%M:%S IST")
                 t["exit_reason"] = exit_reason
-                
+
                 qty = t["quantity"]
-                if t["direction"] == "BUY":
+                # CRITICAL RULE: For Option buyers (both CE and PE), profit is (exit - entry) * qty!
+                # If exit < entry (e.g. Stop Loss hit), gross_pnl is strictly NEGATIVE (LOSS)!
+                if is_opt:
                     gross_pnl = (exit_price - t["entry_price"]) * qty
                 else:
-                    gross_pnl = (t["entry_price"] - exit_price) * qty
+                    if t["direction"] == "BUY":
+                        gross_pnl = (exit_price - t["entry_price"]) * qty
+                    else:
+                        gross_pnl = (t["entry_price"] - exit_price) * qty
                     
                 total_charges = t.get("charges", 20.0) * 2  # Entry + Exit charges
                 net_pnl = round(gross_pnl - total_charges, 2)
