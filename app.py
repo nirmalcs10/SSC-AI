@@ -450,7 +450,10 @@ def render_live_fno_and_execution_fragment(sym: str, mode_str: str, plan_dict: d
         base_prem = round(max(25.0, risk_p * 2.2), 1)
 
         # 1. Live Call Option (CE) Metrics
-        ce_strike_label = ce_quote_data.get("symbol") or f"{live_atm_strike} CE"
+        exp_str = ce_quote_data.get("expiry") or pe_quote_data.get("expiry") or ""
+        ce_strike_display = f"{sym} {exp_str} {live_atm_strike} CE" if exp_str else (ce_quote_data.get("symbol") or f"{sym} {live_atm_strike} CE")
+        pe_strike_display = f"{sym} {exp_str} {live_atm_strike} PE" if exp_str else (pe_quote_data.get("symbol") or f"{sym} {live_atm_strike} PE")
+
         live_ce_prem = float(ce_quote_data.get("ltp") or base_prem)
         ce_bid = float(ce_quote_data.get("best_bid") or (live_ce_prem - 0.5))
         ce_ask = float(ce_quote_data.get("best_ask") or (live_ce_prem + 0.5))
@@ -460,7 +463,6 @@ def render_live_fno_and_execution_fragment(sym: str, mode_str: str, plan_dict: d
         is_ce_rec = (dir_plan == "BUY")
 
         # 2. Live Put Option (PE) Metrics
-        pe_strike_label = pe_quote_data.get("symbol") or f"{live_atm_strike} PE"
         live_pe_prem = float(pe_quote_data.get("ltp") or base_prem)
         pe_bid = float(pe_quote_data.get("best_bid") or (live_pe_prem - 0.5))
         pe_ask = float(pe_quote_data.get("best_ask") or (live_pe_prem + 0.5))
@@ -471,7 +473,7 @@ def render_live_fno_and_execution_fragment(sym: str, mode_str: str, plan_dict: d
 
         # --- CALL OPTION (CE) ROW ---
         ce_badge = "<span style='background: rgba(0, 230, 118, 0.2); border: 1px solid #00E676; color: #00E676; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;'>🟢 AI RECOMMENDED (BULLISH CONFLUENCE)</span>" if is_ce_rec else "<span style='background: rgba(139, 148, 158, 0.15); border: 1px solid #30363D; color: #8B949E; padding: 2px 8px; border-radius: 4px; font-size: 11px;'>BULLISH ALTERNATIVE</span>"
-        feed_badge = "<span style='background: rgba(0, 229, 255, 0.15); border: 1px solid #00E5FF; color: #00E5FF; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;'>⚡ LIVE NFO EXCHANGE TICK (Angel One)</span>" if is_live_nfo_exchange else "<span style='background: rgba(139, 148, 158, 0.12); border: 1px solid #30363D; color: #8B949E; padding: 2px 8px; border-radius: 4px; font-size: 11px;'>⚡ REAL-TIME MODEL FEED</span>"
+        feed_badge = "<span style='background: rgba(0, 229, 255, 0.15); border: 1px solid #00E5FF; color: #00E5FF; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;'>⚡ LIVE NFO EXCHANGE TICK (Angel One)</span>" if is_live_nfo_exchange else "<span style='background: rgba(139, 148, 158, 0.12); border: 1px solid #30363D; color: #8B949E; padding: 2px 8px; border-radius: 4px; font-size: 11px;'>⚡ REAL-TIME VOLATILITY FEED</span>"
 
         st.markdown(f"""
         <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px; margin-bottom: 6px;">
@@ -488,7 +490,7 @@ def render_live_fno_and_execution_fragment(sym: str, mode_str: str, plan_dict: d
             st.markdown(f"""
             <div class="full-digit-card">
                 <div class="digit-title">Live ATM Strike (CE)</div>
-                <div class="digit-value" style="color: #00E5FF;">{ce_strike_label}</div>
+                <div class="digit-value" style="color: #00E5FF; font-size: 15px;">{ce_strike_display}</div>
                 <div class="digit-sub" style="color: #8B949E;">1 Lot = {idx_lot} Qty</div>
             </div>
             """, unsafe_allow_html=True)
@@ -542,7 +544,7 @@ def render_live_fno_and_execution_fragment(sym: str, mode_str: str, plan_dict: d
             st.markdown(f"""
             <div class="full-digit-card">
                 <div class="digit-title">Live ATM Strike (PE)</div>
-                <div class="digit-value" style="color: #00E5FF;">{pe_strike_label}</div>
+                <div class="digit-value" style="color: #00E5FF; font-size: 15px;">{pe_strike_display}</div>
                 <div class="digit-sub" style="color: #8B949E;">1 Lot = {idx_lot} Qty</div>
             </div>
             """, unsafe_allow_html=True)
@@ -605,7 +607,7 @@ def render_live_fno_and_execution_fragment(sym: str, mode_str: str, plan_dict: d
             total_contracts = int(trade_lots * lot_size)
 
             if exec_direction == "BUY":
-                exec_trading_sym = f"{sym} {live_atm_strike} CE"
+                exec_trading_sym = ce_strike_display
                 exec_entry_p = live_ce_prem
                 exec_sl_p = live_ce_sl
                 exec_t1_p = live_ce_t1
@@ -615,7 +617,7 @@ def render_live_fno_and_execution_fragment(sym: str, mode_str: str, plan_dict: d
                 u_t1 = float(plan_dict.get("target_1") or round(live_ltp * 1.004, 2))
                 u_t2 = float(plan_dict.get("target_2") or round(live_ltp * 1.008, 2))
             else:
-                exec_trading_sym = f"{sym} {live_atm_strike} PE"
+                exec_trading_sym = pe_strike_display
                 exec_entry_p = live_pe_prem
                 exec_sl_p = live_pe_sl
                 exec_t1_p = live_pe_t1

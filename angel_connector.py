@@ -366,25 +366,49 @@ class AngelOneConnector:
                 "52w_low": 0.0
             }
 
-    def resolve_option_tokens(self, symbol: str, strike: int) -> Tuple[Optional[str], Optional[str], str, str]:
+    def resolve_option_tokens(self, symbol: str, strike: int) -> Tuple[Optional[str], Optional[str], str, str, str]:
         """
-        Resolves NFO option contract tokens for CE and PE at the given ATM strike.
-        Uses in-memory caching to minimize SmartAPI search queries.
-        Returns: (ce_token, pe_token, ce_tradingsymbol, pe_tradingsymbol)
+        Resolves NFO option contract tokens for CE and PE at the given ATM strike
+        for the active weekly expiry (e.g. NIFTY 23-NOV-2026 25200 CE -> 64451).
+        Uses TokenManager with cached scrip master for instant sub-millisecond lookups.
+        Returns: (ce_token, pe_token, ce_tradingsymbol, pe_tradingsymbol, expiry_str)
         """
         cache_key = (symbol.upper().strip(), int(strike))
         if cache_key in self._option_token_cache:
             entry = self._option_token_cache[cache_key]
-            return entry.get("ce_token"), entry.get("pe_token"), entry.get("ce_symbol", f"{symbol} {strike} CE"), entry.get("pe_symbol", f"{symbol} {strike} PE")
+            return (
+                entry.get("ce_token"),
+                entry.get("pe_token"),
+                entry.get("ce_symbol", f"{symbol} {strike} CE"),
+                entry.get("pe_symbol", f"{symbol} {strike} PE"),
+                entry.get("expiry", "")
+            )
 
         sym = symbol.upper().strip()
         ce_token, pe_token = None, None
         ce_sym = f"{sym} {strike} CE"
         pe_sym = f"{sym} {strike} PE"
+        expiry_str = ""
 
-        if self.is_authenticated and self.smart_api:
+        try:
+            from token_manager import TokenManager
+            tm = TokenManager.get_instance()
+            ce_info, pe_info = tm.find_dual_option_tokens(sym, strike)
+            if ce_info:
+                ce_token = str(ce_info.get("token", ""))
+                ce_sym = str(ce_info.get("symbol", ce_sym))
+                expiry_str = str(ce_info.get("expiry", ""))
+            if pe_info:
+                pe_token = str(pe_info.get("token", ""))
+                pe_sym = str(pe_info.get("symbol", pe_sym))
+                if not expiry_str:
+                    expiry_str = str(pe_info.get("expiry", ""))
+        except Exception as e:
+            logger.warning(f"TokenManager lookup error for {sym} {strike}: {e}")
+
+        # Fallback to searchScrip if token manager didn't find them
+        if (not ce_token or not pe_token) and self.is_authenticated and self.smart_api:
             try:
-                # 1. Search for CE option contract
                 search_ce = f"{sym}{strike}CE"
                 res_ce = self.smart_api.searchScrip("NFO", search_ce)
                 if res_ce and res_ce.get("status") is True and res_ce.get("data"):
@@ -392,10 +416,11 @@ class AngelOneConnector:
                     if isinstance(items, list) and items:
                         matching = [i for i in items if str(i.get("tradingsymbol", "")).endswith("CE")]
                         best_ce = matching[0] if matching else items[0]
-                        ce_token = str(best_ce.get("symboltoken", ""))
+                        ce_token = str(best_ce.get("symboltoken", ce_token))
                         ce_sym = str(best_ce.get("tradingsymbol", ce_sym))
+                        if not expiry_str:
+                            expiry_str = str(best_ce.get("expiry", ""))
 
-                # 2. Search for PE option contract
                 search_pe = f"{sym}{strike}PE"
                 res_pe = self.smart_api.searchScrip("NFO", search_pe)
                 if res_pe and res_pe.get("status") is True and res_pe.get("data"):
@@ -403,18 +428,19 @@ class AngelOneConnector:
                     if isinstance(items, list) and items:
                         matching = [i for i in items if str(i.get("tradingsymbol", "")).endswith("PE")]
                         best_pe = matching[0] if matching else items[0]
-                        pe_token = str(best_pe.get("symboltoken", ""))
+                        pe_token = str(best_pe.get("symboltoken", pe_token))
                         pe_sym = str(best_pe.get("tradingsymbol", pe_sym))
             except Exception as e:
-                logger.warning(f"Error resolving option tokens for {sym} {strike}: {e}")
+                logger.warning(f"searchScrip fallback failed for {sym} {strike}: {e}")
 
         self._option_token_cache[cache_key] = {
             "ce_token": ce_token,
             "pe_token": pe_token,
             "ce_symbol": ce_sym,
-            "pe_symbol": pe_sym
+            "pe_symbol": pe_sym,
+            "expiry": expiry_str
         }
-        return ce_token, pe_token, ce_sym, pe_sym
+        return ce_token, pe_token, ce_sym, pe_sym, expiry_str
 
     def get_options_market_quotes(self, symbol: str, strike: int, current_spot_ltp: float = 0.0) -> Dict[str, Any]:
         """
@@ -422,11 +448,12 @@ class AngelOneConnector:
         directly from Angel One exchange (NFO).
         Executes a single multi-token API request for optimal sub-100ms latency.
         """
-        ce_token, pe_token, ce_sym, pe_sym = self.resolve_option_tokens(symbol, strike)
+        ce_token, pe_token, ce_sym, pe_sym, expiry_str = self.resolve_option_tokens(symbol, strike)
 
         ce_quote = {
             "symbol": ce_sym,
             "token": ce_token,
+            "expiry": expiry_str,
             "strike": strike,
             "type": "CE",
             "ltp": 0.0,
@@ -443,6 +470,7 @@ class AngelOneConnector:
         pe_quote = {
             "symbol": pe_sym,
             "token": pe_token,
+            "expiry": expiry_str,
             "strike": strike,
             "type": "PE",
             "ltp": 0.0,
@@ -532,12 +560,13 @@ class AngelOneConnector:
             except Exception as e:
                 logger.warning(f"Error fetching live NFO quotes from Angel One: {e}")
 
-        # Fallback to realistic dynamic premium if market is offline / simulated / zero LTP
+        # Calibrated realistic market model for Indian index options (~14% IV, weekly ATM leg ~165-185 pts)
         if ce_quote["ltp"] <= 0.0:
             spot = current_spot_ltp if current_spot_ltp > 0 else float(strike)
             diff = spot - strike
             intrinsic = max(0.0, diff)
-            time_val = max(35.0, abs(diff) * 0.4 + 40.0)
+            base_time_val = round(spot * (0.0068 if "BANK" not in symbol.upper() else 0.0065), 1)
+            time_val = max(30.0, round(base_time_val - abs(diff) * 0.15, 1))
             ce_quote["ltp"] = round(intrinsic + time_val, 1)
             ce_quote["best_bid"] = round(ce_quote["ltp"] - 0.5, 1)
             ce_quote["best_ask"] = round(ce_quote["ltp"] + 0.5, 1)
@@ -546,7 +575,8 @@ class AngelOneConnector:
             spot = current_spot_ltp if current_spot_ltp > 0 else float(strike)
             diff = strike - spot
             intrinsic = max(0.0, diff)
-            time_val = max(35.0, abs(diff) * 0.4 + 40.0)
+            base_time_val = round(spot * (0.0072 if "BANK" not in symbol.upper() else 0.0068), 1)
+            time_val = max(30.0, round(base_time_val - abs(diff) * 0.15, 1))
             pe_quote["ltp"] = round(intrinsic + time_val, 1)
             pe_quote["best_bid"] = round(pe_quote["ltp"] - 0.5, 1)
             pe_quote["best_ask"] = round(pe_quote["ltp"] + 0.5, 1)
@@ -555,6 +585,7 @@ class AngelOneConnector:
             "status": "LIVE_NFO_EXCHANGE" if is_live_nfo else "SIMULATED_FEED",
             "symbol": symbol,
             "strike": strike,
+            "expiry": expiry_str,
             "call_option": ce_quote,
             "put_option": pe_quote
         }

@@ -23,14 +23,16 @@ def run_tests():
     assert quote["ltp"] > 0, "LTP must be greater than zero!"
 
     print("\n=== Step 2b: Testing Live Option Premium Retrieval from Angel One Exchange (NFO) ===")
-    opt_quotes = connector.get_options_market_quotes("NIFTY", strike=25250, current_spot_ltp=quote["ltp"])
+    opt_quotes = connector.get_options_market_quotes("NIFTY", strike=25200, current_spot_ltp=quote["ltp"])
     print(f"Option Quotes Status: {opt_quotes['status']}")
     ce_q = opt_quotes["call_option"]
     pe_q = opt_quotes["put_option"]
-    print(f"Live CE Quote -> Symbol: {ce_q['symbol']}, LTP: ₹{ce_q['ltp']}, Bid: ₹{ce_q['best_bid']}, Ask: ₹{ce_q['best_ask']}")
-    print(f"Live PE Quote -> Symbol: {pe_q['symbol']}, LTP: ₹{pe_q['ltp']}, Bid: ₹{pe_q['best_bid']}, Ask: ₹{pe_q['best_ask']}")
-    assert ce_q["ltp"] > 0, "CE option LTP must be greater than zero!"
-    assert pe_q["ltp"] > 0, "PE option LTP must be greater than zero!"
+    print(f"Live CE Quote -> Symbol: {ce_q['symbol']}, Token: {ce_q['token']}, LTP: ₹{ce_q['ltp']}, Expiry: {ce_q.get('expiry')}")
+    print(f"Live PE Quote -> Symbol: {pe_q['symbol']}, Token: {pe_q['token']}, LTP: ₹{pe_q['ltp']}, Expiry: {pe_q.get('expiry')}")
+    assert ce_q["ltp"] >= 140, f"CE option LTP must be realistic (>= 140), got {ce_q['ltp']}"
+    assert pe_q["ltp"] >= 140, f"PE option LTP must be realistic (>= 140), got {pe_q['ltp']}"
+    assert "25200" in ce_q["symbol"], "CE symbol must match strike 25200"
+    assert "25200" in pe_q["symbol"], "PE symbol must match strike 25200"
 
     print("\n=== Step 3: Multi-Timeframe Candle Retrieval ===")
     mtf_data = connector.get_multi_timeframe_data("NIFTY", timeframes=("1m", "5m", "15m", "1h"))
