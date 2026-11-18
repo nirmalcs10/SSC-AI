@@ -865,6 +865,14 @@ with tab_rationale:
 # TAB 4: ANGEL ONE DIAGNOSTICS
 with tab_diagnostics:
     st.subheader("Angel One SmartAPI Health & Connection Diagnostic")
+    funds_info = {}
+    if hasattr(st.session_state, "angel_connector") and st.session_state.angel_connector:
+        try:
+            funds_info = st.session_state.angel_connector.get_funds() or {}
+        except Exception:
+            funds_info = {}
+    if not isinstance(funds_info, dict):
+        funds_info = {}
     diag_col1, diag_col2 = st.columns(2)
     with diag_col1:
         st.write(f"**Authenticated Status:** {'🟢 Connected' if st.session_state.angel_connector.is_authenticated else '🔴 Disconnected'}")
