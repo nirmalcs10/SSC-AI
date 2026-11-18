@@ -1,15 +1,17 @@
 """
 Dedicated Application Launcher for Firefox.
-Launches the Streamlit trading dashboard directly in Mozilla Firefox.
+Launches the Streamlit trading dashboard directly in Mozilla Firefox on fixed default port 8501.
 """
 import os
 import sys
 import time
+import socket
 import subprocess
 import webbrowser
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
+DEFAULT_PORT = 8501
 
 def find_firefox_path() -> str:
     """Detect Firefox executable on Windows."""
@@ -23,30 +25,43 @@ def find_firefox_path() -> str:
             return path
     return "firefox"
 
-import socket
 
-def get_available_port(default_port: int = 8501) -> int:
-    """Check if default port is free, otherwise find next available port."""
-    port = default_port
-    while port < default_port + 20:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            if s.connect_ex(("127.0.0.1", port)) != 0:
-                return port
-        port += 1
-    return default_port
+def free_port_if_occupied(port: int = DEFAULT_PORT):
+    """If the default port is occupied by a stale process, terminate it cleanly."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        is_occupied = (s.connect_ex(("127.0.0.1", port)) == 0)
+
+    if is_occupied:
+        print(f"Port {port} is occupied. Cleaning up stale process to ensure fixed default port {port}...")
+        try:
+            # Find PID listening on the port in Windows
+            cmd = f'powershell -Command "Get-NetTCPConnection -LocalPort {port} -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess"'
+            output = subprocess.check_output(cmd, shell=True, text=True).strip()
+            pids = set(output.split())
+            current_pid = str(os.getpid())
+            for pid in pids:
+                if pid and pid != "0" and pid != current_pid:
+                    print(f"Terminating stale process {pid} on port {port}...")
+                    subprocess.run(f"taskkill /PID {pid} /F", shell=True, capture_output=True)
+            time.sleep(1)
+        except Exception as e:
+            print(f"Port cleanup notice: {e}")
+
 
 def launch():
     firefox_bin = find_firefox_path()
-    port = get_available_port(8501)
+    port = DEFAULT_PORT
+    free_port_if_occupied(port)
     app_url = f"http://localhost:{port}"
     
     print("=" * 60)
     print("Indian Stock Market Multi-Timeframe Trading Tool")
     print(f"Target Browser: Mozilla Firefox ({firefox_bin})")
-    print(f"Application URL: {app_url} (Port {port})")
+    print(f"Fixed Default Port: {port}")
+    print(f"Application URL: {app_url}")
     print("=" * 60)
 
-    # Launch Streamlit server in headless mode so it doesn't open default browser
+    # Launch Streamlit server on fixed port 8501
     cmd = [
         sys.executable,
         "-m",

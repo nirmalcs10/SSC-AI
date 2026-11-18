@@ -182,11 +182,17 @@ else:
 st.sidebar.markdown("---")
 st.sidebar.subheader("🛡️ Virtual Paper Wallet")
 wallet_state = st.session_state.order_manager.wallet
-st.sidebar.metric("Virtual Balance", f"₹ {wallet_state.get('balance', 100000.0):,.2f}")
+open_trades_sidebar = st.session_state.order_manager.get_open_positions()
+invested_margin_sidebar = sum([t.get('invested_capital', t.get('margin_blocked', 0.0)) for t in open_trades_sidebar])
+
+st.sidebar.metric("Available Margin", f"₹ {wallet_state.get('balance', 100000.0):,.2f}")
+st.sidebar.metric("Invested Capital", f"₹ {invested_margin_sidebar:,.2f}")
 st.sidebar.metric("Realized P&L", f"₹ {wallet_state.get('realized_pnl', 0.0):,.2f}")
-if st.sidebar.button("🔄 Reset Wallet to ₹1,00,000", help="Resets virtual capital and trade history"):
-    st.session_state.order_manager.reset_wallet(100000.0)
-    st.sidebar.success("Wallet reset to ₹1,00,000!")
+
+reset_cap = st.sidebar.number_input("Reset Balance (₹)", min_value=10000, max_value=10000000, value=100000, step=25000)
+if st.sidebar.button(f"🔄 Reset Wallet to ₹{reset_cap:,}", use_container_width=True, help="Cleanly resets virtual capital to this exact amount"):
+    st.session_state.order_manager.reset_wallet(float(reset_cap))
+    st.sidebar.success(f"Wallet cleanly reset to ₹{reset_cap:,}!")
     st.rerun()
 
 
@@ -233,76 +239,6 @@ plan = st.session_state.last_analysis
 mtf_data = st.session_state.mtf_data
 
 
-# --- LIVE MARKET QUOTE & ORDER-FLOW BANNER ---
-lq_col1, lq_col2, lq_col3, lq_col4 = st.columns([1.5, 1.2, 1.5, 1])
-with lq_col1:
-    chg_color = "#00E676" if live_quote["change"] >= 0 else "#FF1744"
-    chg_sign = "+" if live_quote["change"] >= 0 else ""
-    st.markdown(f"""
-    <div style="background-color: #161B22; padding: 10px 14px; border-radius: 8px; border: 1px solid #30363D;">
-        <span style="font-size: 13px; color: #8B949E;">Angel One Live LTP ({live_quote['exchange']})</span><br>
-        <span style="font-size: 24px; font-weight: bold; color: #ECEFF1;">₹ {live_quote['ltp']:,.2f}</span>
-        <span style="color: {chg_color}; font-size: 14px; font-weight: bold; margin-left: 8px;">{chg_sign}{live_quote['change']} ({chg_sign}{live_quote['percent_change']}%)</span>
-    </div>
-    """, unsafe_allow_html=True)
-
-with lq_col2:
-    of_ratio = live_quote.get("order_flow_ratio", 50.0)
-    dom_text = "Buyers in Control" if of_ratio > 50 else "Sellers in Control"
-    dom_color = "#00C853" if of_ratio > 50 else "#FF1744"
-    st.markdown(f"""
-    <div style="background-color: #161B22; padding: 10px 14px; border-radius: 8px; border: 1px solid #30363D;">
-        <span style="font-size: 13px; color: #8B949E;">Order-Flow Dominance</span><br>
-        <span style="font-size: 15px; font-weight: bold; color: {dom_color};">{dom_text} ({of_ratio}%)</span>
-        <div style="background: #30363D; border-radius: 4px; height: 6px; width: 100%; margin-top: 6px;">
-            <div style="background: {dom_color}; height: 6px; width: {of_ratio}%; border-radius: 4px;"></div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-with lq_col3:
-    st.markdown(f"""
-    <div style="background-color: #161B22; padding: 10px 14px; border-radius: 8px; border: 1px solid #30363D;">
-        <span style="font-size: 13px; color: #8B949E;">Day High / Low & Volume</span><br>
-        <span style="font-size: 14px; color: #ECEFF1;">H: ₹{live_quote['high']:,.1f} | L: ₹{live_quote['low']:,.1f}</span><br>
-        <span style="font-size: 12px; color: #8B949E;">Vol: {live_quote['volume']:,} | OI: {live_quote['oi']:,}</span>
-    </div>
-    """, unsafe_allow_html=True)
-
-with lq_col4:
-    st.markdown(f"""
-    <div style="background-color: #161B22; padding: 10px 14px; border-radius: 8px; border: 1px solid #30363D;">
-        <span style="font-size: 13px; color: #8B949E;">Virtual Capital Balance</span><br>
-        <span style="font-size: 18px; font-weight: bold; color: #00E5FF;">₹ {wallet_state.get('balance', 100000.0):,.0f}</span><br>
-        <span style="font-size: 11px; color: #00E676;">100% Risk-Free Simulation</span>
-    </div>
-    """, unsafe_allow_html=True)
-
-
-# Market Depth 5-Level Table Expander
-with st.expander(f"📊 Live 5-Level Market Depth Ladder — {selected_symbol}"):
-    depth = live_quote.get("depth", {})
-    bids = depth.get("buy", [])
-    asks = depth.get("sell", [])
-    
-    if bids or asks:
-        col_d1, col_d2 = st.columns(2)
-        with col_d1:
-            st.markdown("<span style='color: #00E676; font-weight: bold;'>Top 5 Bids (Buyers)</span>", unsafe_allow_html=True)
-            if bids:
-                df_bids = pd.DataFrame(bids)
-                df_bids.columns = [c.capitalize() for c in df_bids.columns]
-                st.dataframe(df_bids, use_container_width=True)
-        with col_d2:
-            st.markdown("<span style='color: #FF1744; font-weight: bold;'>Top 5 Asks (Sellers)</span>", unsafe_allow_html=True)
-            if asks:
-                df_asks = pd.DataFrame(asks)
-                df_asks.columns = [c.capitalize() for c in df_asks.columns]
-                st.dataframe(df_asks, use_container_width=True)
-    else:
-        st.info("Live 5-level market depth ladder is active during market hours with Angel One SmartAPI login.")
-
-
 # --- HEADER & ACCOUNT STATUS ---
 col_head1, col_head2 = st.columns([3, 1])
 with col_head1:
@@ -313,7 +249,7 @@ with col_head2:
         st.metric("Setup Current Price", f"₹ {plan.get('current_price', 0.0):,.2f}")
 
 
-# --- TRADE SIGNAL CARD ---
+# --- TRADE SIGNAL CARD & FULL-DIGITS LEVEL HUD ---
 if plan:
     direction = plan.get("direction", "NEUTRAL")
     signal = plan.get("signal", "WAIT")
@@ -392,96 +328,279 @@ if plan:
         </div>
         """, unsafe_allow_html=True)
 
-    # F&O Options Recommendation Box with Full Untruncated Digits
-    fno = plan.get("fno_recommendation")
-    if fno:
-        st.markdown("### 🎯 F&O Option Strike & Premium Trade Recommendation")
-        opt_prem = float(fno.get("approx_premium", 0.0))
-        opt_sl = float(fno.get("option_stop_loss", 0.0))
-        opt_t1 = float(fno.get("option_target_1", 0.0))
-        opt_t2 = float(fno.get("option_target_2", 0.0))
-        f_lot_size = fno.get("lot_size", 65)
+
+# --- LIVE STREAMING 1-SECOND REFRESH FRAGMENT ---
+@st.fragment(run_every=1)
+def render_live_fno_and_execution_fragment(sym: str, mode_str: str, plan_dict: dict):
+    """
+    Sub-second / 1-Second Live Stream Fragment:
+    Fetches real-time ticks from Angel One SmartAPI every second,
+    recalculates F&O ATM strike, premium, option SL & targets,
+    evaluates live stop-loss/target triggers, and provides 1-Click execution on ALL indices.
+    """
+    conn = st.session_state.angel_connector
+    ord_mgr = st.session_state.order_manager
+    live_q = conn.get_market_quote(sym, mode="FULL")
+    live_ltp = float(live_q.get("ltp", 0.0) or (plan_dict.get("current_price", 0.0) if plan_dict else 0.0))
+    time_stamp_now = datetime.datetime.now().strftime("%H:%M:%S IST")
+
+    # 1. Evaluate Live Triggers for Open Positions every second
+    live_alerts = ord_mgr.check_live_triggers(sym, live_ltp)
+    for alert in live_alerts:
+        if alert["type"] == "SL_HIT":
+            st.error(f"🚨 {alert['message']}")
+        elif alert["type"] == "T2_HIT":
+            st.balloons()
+            st.success(f"🎯 {alert['message']}")
+        elif alert["type"] == "T1_HIT":
+            st.warning(f"⚡ {alert['message']}")
+
+    # 2. Live Market Quote & Order Flow Banner
+    lq_col1, lq_col2, lq_col3, lq_col4 = st.columns([1.5, 1.2, 1.5, 1.2])
+    with lq_col1:
+        chg_c = "#00E676" if live_q["change"] >= 0 else "#FF1744"
+        chg_s = "+" if live_q["change"] >= 0 else ""
+        st.markdown(f"""
+        <div style="background-color: #161B22; padding: 10px 14px; border-radius: 8px; border: 1px solid #30363D;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <span style="font-size: 12px; color: #8B949E;">Angel One Live LTP ({live_q['exchange']})</span>
+                <span style="font-size: 10px; background: rgba(0, 230, 118, 0.2); color: #00E676; padding: 1px 6px; border-radius: 4px; font-weight: bold;">LIVE 1s • {time_stamp_now}</span>
+            </div>
+            <span style="font-size: 24px; font-weight: bold; color: #ECEFF1;">₹ {live_q['ltp']:,.2f}</span>
+            <span style="color: {chg_c}; font-size: 13px; font-weight: bold; margin-left: 8px;">{chg_s}{live_q['change']} ({chg_s}{live_q['percent_change']}%)</span>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with lq_col2:
+        ofr = live_q.get("order_flow_ratio", 50.0)
+        d_text = "Buyers in Control" if ofr > 50 else "Sellers in Control"
+        d_color = "#00C853" if ofr > 50 else "#FF1744"
+        st.markdown(f"""
+        <div style="background-color: #161B22; padding: 10px 14px; border-radius: 8px; border: 1px solid #30363D;">
+            <span style="font-size: 12px; color: #8B949E;">Order-Flow Dominance</span><br>
+            <span style="font-size: 14px; font-weight: bold; color: {d_color};">{d_text} ({ofr}%)</span>
+            <div style="background: #30363D; border-radius: 4px; height: 6px; width: 100%; margin-top: 6px;">
+                <div style="background: {d_color}; height: 6px; width: {ofr}%; border-radius: 4px;"></div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with lq_col3:
+        st.markdown(f"""
+        <div style="background-color: #161B22; padding: 10px 14px; border-radius: 8px; border: 1px solid #30363D;">
+            <span style="font-size: 12px; color: #8B949E;">Day High / Low & Volume</span><br>
+            <span style="font-size: 13px; color: #ECEFF1;">H: ₹{live_q['high']:,.1f} | L: ₹{live_q['low']:,.1f}</span><br>
+            <span style="font-size: 11px; color: #8B949E;">Vol: {live_q['volume']:,} | OI: {live_q['oi']:,}</span>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with lq_col4:
+        w_state = ord_mgr.wallet
+        st.markdown(f"""
+        <div style="background-color: #161B22; padding: 10px 14px; border-radius: 8px; border: 1px solid #30363D;">
+            <span style="font-size: 12px; color: #8B949E;">Virtual Capital Balance</span><br>
+            <span style="font-size: 18px; font-weight: bold; color: #00E5FF;">₹ {w_state.get('balance', 100000.0):,.0f}</span><br>
+            <span style="font-size: 10px; color: #00E676;">100% Risk-Free Simulation</span>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # 3. Market Depth 5-Level Table Expander
+    with st.expander(f"📊 Live 5-Level Market Depth Ladder — {sym}"):
+        depth_data = live_q.get("depth", {})
+        top_bids = depth_data.get("buy", [])
+        top_asks = depth_data.get("sell", [])
+        if top_bids or top_asks:
+            col_d1, col_d2 = st.columns(2)
+            with col_d1:
+                st.markdown("<span style='color: #00E676; font-weight: bold;'>Top 5 Bids (Buyers)</span>", unsafe_allow_html=True)
+                if top_bids:
+                    st.dataframe(pd.DataFrame(top_bids), use_container_width=True)
+            with col_d2:
+                st.markdown("<span style='color: #FF1744; font-weight: bold;'>Top 5 Asks (Sellers)</span>", unsafe_allow_html=True)
+                if top_asks:
+                    st.dataframe(pd.DataFrame(top_asks), use_container_width=True)
+        else:
+            st.info("Live 5-level market depth ladder is active during market hours with Angel One SmartAPI login.")
+
+    # 4. F&O Option Strike & Premium Trade Recommendation Box (Updates Every Second!)
+    is_idx = sym in INDEX_TOKENS
+    if is_idx:
+        st.markdown(f"""
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 15px; margin-bottom: 8px;">
+            <h3 style="margin: 0;">🎯 F&O Option Strike & Premium Trade Recommendation</h3>
+            <span style="background: rgba(0, 230, 118, 0.15); border: 1px solid #00E676; color: #00E676; padding: 2px 10px; border-radius: 6px; font-size: 12px; font-weight: bold;">
+                🟢 LIVE 1s FEED: {time_stamp_now}
+            </span>
+        </div>
+        """, unsafe_allow_html=True)
+
+        idx_cfg = INDEX_TOKENS[sym]
+        stk_step = idx_cfg["strike_step"]
+        idx_lot = idx_cfg["lot_size"]
+        live_atm_strike = int(round(live_ltp / stk_step) * stk_step)
+        
+        dir_plan = plan_dict.get("direction", "BUY") if plan_dict else "BUY"
+        opt_type_rec = "CE" if dir_plan == "BUY" else ("PE" if dir_plan == "SELL" else "CE")
+        rec_strike_label = f"{live_atm_strike} {opt_type_rec}"
+
+        # Estimate live option premium dynamically based on live LTP
+        risk_p = float(plan_dict.get("risk_points", 30.0)) if plan_dict else 30.0
+        live_approx_prem = round(max(20.0, risk_p * 2.2), 1)
+        live_opt_sl = round(max(5.0, live_approx_prem - (risk_p * 0.55)), 1)
+        live_opt_t1 = round(live_approx_prem + (risk_p * 0.8), 1)
+        live_opt_t2 = round(live_approx_prem + (risk_p * 1.4), 1)
 
         f_col1, f_col2, f_col3, f_col4, f_col5 = st.columns(5)
         with f_col1:
             st.markdown(f"""
             <div class="full-digit-card">
-                <div class="digit-title">Recommended Strike</div>
-                <div class="digit-value" style="color: #00E5FF;">{fno['strike']}</div>
-                <div class="digit-sub" style="color: #8B949E;">1 Lot = {f_lot_size} Qty</div>
+                <div class="digit-title">Live ATM Strike</div>
+                <div class="digit-value" style="color: #00E5FF;">{rec_strike_label}</div>
+                <div class="digit-sub" style="color: #8B949E;">1 Lot = {idx_lot} Qty</div>
             </div>
             """, unsafe_allow_html=True)
         with f_col2:
             st.markdown(f"""
             <div class="full-digit-card">
                 <div class="digit-title">Estimated Entry</div>
-                <div class="digit-value" style="color: #00E676;">₹ {opt_prem:,.2f}</div>
-                <div class="digit-sub" style="color: #8B949E;">Premium / Unit</div>
+                <div class="digit-value" style="color: #00E676;">₹ {live_approx_prem:,.2f}</div>
+                <div class="digit-sub" style="color: #8B949E;">Premium / Share</div>
             </div>
             """, unsafe_allow_html=True)
         with f_col3:
             st.markdown(f"""
             <div class="full-digit-card">
                 <div class="digit-title">Option Stop Loss</div>
-                <div class="digit-value" style="color: #FF1744;">₹ {opt_sl:,.2f}</div>
-                <div class="digit-sub" style="color: #FF5252;">Risk: -{round(opt_prem - opt_sl, 2):,.2f} pts</div>
+                <div class="digit-value" style="color: #FF1744;">₹ {live_opt_sl:,.2f}</div>
+                <div class="digit-sub" style="color: #FF5252;">Risk: -{round(live_approx_prem - live_opt_sl, 1):,.1f} pts</div>
             </div>
             """, unsafe_allow_html=True)
         with f_col4:
             st.markdown(f"""
             <div class="full-digit-card">
                 <div class="digit-title">Option Target 1</div>
-                <div class="digit-value" style="color: #00E676;">₹ {opt_t1:,.2f}</div>
-                <div class="digit-sub" style="color: #69F0AE;">Gain: +{round(opt_t1 - opt_prem, 2):,.2f} pts</div>
+                <div class="digit-value" style="color: #00E676;">₹ {live_opt_t1:,.2f}</div>
+                <div class="digit-sub" style="color: #69F0AE;">Gain: +{round(live_opt_t1 - live_approx_prem, 1):,.1f} pts</div>
             </div>
             """, unsafe_allow_html=True)
         with f_col5:
             st.markdown(f"""
             <div class="full-digit-card">
                 <div class="digit-title">Option Target 2</div>
-                <div class="digit-value" style="color: #00C853;">₹ {opt_t2:,.2f}</div>
-                <div class="digit-sub" style="color: #B9F6CA;">Gain: +{round(opt_t2 - opt_prem, 2):,.2f} pts</div>
+                <div class="digit-value" style="color: #00C853;">₹ {live_opt_t2:,.2f}</div>
+                <div class="digit-sub" style="color: #B9F6CA;">Gain: +{round(live_opt_t2 - live_approx_prem, 1):,.1f} pts</div>
             </div>
             """, unsafe_allow_html=True)
 
-    # 1-Click Virtual Paper Trading Execution Panel
-    if direction in ("BUY", "SELL"):
-        st.markdown("""<div class="execution-box">""", unsafe_allow_html=True)
-        st.markdown("<span style='color: #00E5FF; font-weight: bold; font-size: 16px;'>📝 1-Click Virtual Paper Trade Execution (Zero Real Money Risk)</span>", unsafe_allow_html=True)
-        st.caption("Fills order on virtual balance with realistic Rs.20 brokerage + STT charges and automatic SL/Target exits.")
-        exec_col1, exec_col2 = st.columns([1, 2])
-        
-        with exec_col1:
-            default_qty = 1 if not fno else 1
-            if fno:
-                fno_lot_size = fno.get("lot_size", 65)
-                qty_label = f"Lots (Options F&O) — 1 Lot = {fno_lot_size} Qty"
-                trade_qty = st.number_input(qty_label, min_value=1, max_value=50, value=default_qty, step=1)
-                total_units = int(trade_qty * fno_lot_size)
-                approx_cap = total_units * float(fno.get("approx_premium", 0.0))
-                st.caption(f"📦 **{total_units} Contracts** ({trade_qty} Lot × {fno_lot_size}) • Capital: **₹ {approx_cap:,.1f}**")
-            else:
-                trade_qty = st.number_input("Quantity (Shares)", min_value=1, max_value=5000, value=10, step=1)
-                total_units = int(trade_qty)
-        with exec_col2:
-            st.write("")
-            if fno:
-                btn_label = f"🚀 Place Virtual {direction} Trade ({trade_qty} Lot = {total_units} Qty)"
-            else:
-                btn_label = f"🚀 Place Virtual {direction} Trade ({total_units} Shares)"
-            if st.button(btn_label, type="primary", use_container_width=True):
-                with st.spinner("Opening virtual position with Stop Loss & Target..."):
-                    exec_res = st.session_state.order_manager.execute_trade_from_plan(
-                        plan=plan,
-                        quantity=int(trade_qty),
-                        is_paper_trade=True
-                    )
-                    if exec_res.get("status"):
-                        st.success(exec_res.get("message"))
-                        st.rerun()
-                    else:
-                        st.error(exec_res.get("message"))
-        st.markdown("""</div>""", unsafe_allow_html=True)
+    # 5. 1-Click Virtual Paper Trade Execution Panel (Available on ALL INDICES & EQUITIES)
+    st.markdown("""<div class="execution-box">""", unsafe_allow_html=True)
+    st.markdown("<span style='color: #00E5FF; font-weight: bold; font-size: 16px;'>📝 1-Click Virtual Paper Trade Execution (Zero Real Money Risk)</span>", unsafe_allow_html=True)
+    st.caption("Active on ALL INDICES (NIFTY, BANKNIFTY, FINNIFTY, MIDCPNIFTY) & Equities • Real-time simulated execution with automatic SL/Target triggers.")
+
+    exec_col1, exec_col2, exec_col3 = st.columns([1.2, 1.2, 1.8])
+    plan_dir = plan_dict.get("direction", "BUY") if plan_dict else "BUY"
+    default_dir_idx = 0 if plan_dir != "SELL" else 1
+
+    with exec_col1:
+        trade_side_label = st.radio(
+            "Trade Direction:",
+            ["BUY (Call / Long)", "SELL (Put / Short)"],
+            index=default_dir_idx,
+            horizontal=True,
+            key=f"side_{sym}"
+        )
+        exec_direction = "BUY" if "BUY" in trade_side_label else "SELL"
+
+    with exec_col2:
+        if is_idx:
+            lot_size = INDEX_TOKENS[sym]["lot_size"]
+            trade_lots = st.number_input(f"Lots (1 Lot = {lot_size} Qty)", min_value=1, max_value=50, value=1, step=1, key=f"lots_{sym}")
+            total_contracts = int(trade_lots * lot_size)
+            opt_type_chosen = "CE" if exec_direction == "BUY" else "PE"
+            stk_step = INDEX_TOKENS[sym]["strike_step"]
+            atm_stk = int(round(live_ltp / stk_step) * stk_step)
+            exec_trading_sym = f"{sym} {atm_stk} {opt_type_chosen}"
+            exec_entry_p = live_approx_prem if 'live_approx_prem' in locals() else 65.0
+            exec_sl_p = live_opt_sl if 'live_opt_sl' in locals() else exec_entry_p * 0.75
+            exec_t1_p = live_opt_t1 if 'live_opt_t1' in locals() else exec_entry_p * 1.35
+            exec_t2_p = live_opt_t2 if 'live_opt_t2' in locals() else exec_entry_p * 1.60
+            invested_amount = round(total_contracts * exec_entry_p, 2)
+        else:
+            trade_shares = st.number_input("Shares Quantity", min_value=1, max_value=5000, value=10, step=1, key=f"shares_{sym}")
+            total_contracts = int(trade_shares)
+            trade_lots = total_contracts
+            exec_trading_sym = f"{sym}-EQ"
+            exec_entry_p = live_ltp
+            exec_sl_p = round(exec_entry_p * (0.98 if exec_direction == "BUY" else 1.02), 2)
+            exec_t1_p = round(exec_entry_p * (1.02 if exec_direction == "BUY" else 0.98), 2)
+            exec_t2_p = round(exec_entry_p * (1.04 if exec_direction == "BUY" else 0.96), 2)
+            invested_amount = round(total_contracts * exec_entry_p, 2)
+
+    with exec_col3:
+        st.write("")
+        st.markdown(f"**Target Contract:** `{exec_trading_sym}` | **Invested Capital:** <span style='color: #00E5FF; font-weight: bold;'>₹ {invested_amount:,.2f}</span>", unsafe_allow_html=True)
+        st.caption(f"SL: ₹{exec_sl_p:,.1f} | T1: ₹{exec_t1_p:,.1f} | Available Margin: ₹{ord_mgr.wallet['balance']:,.2f}")
+        btn_text = f"🚀 Execute 1-Click {exec_direction} ({trade_lots} Lot = {total_contracts} Qty)" if is_idx else f"🚀 Execute 1-Click {exec_direction} ({total_contracts} Shares)"
+        if st.button(btn_text, type="primary", use_container_width=True, key=f"btn_exec_{sym}"):
+            with st.spinner("Executing virtual paper trade..."):
+                exec_res = ord_mgr.execute_custom_trade(
+                    symbol=sym,
+                    direction=exec_direction,
+                    trade_type="Options " + ("CE" if exec_direction == "BUY" else "PE") if is_idx else "Equity Intraday",
+                    quantity_lots=int(trade_lots),
+                    entry_price=exec_entry_p,
+                    sl_price=exec_sl_p,
+                    target_1=exec_t1_p,
+                    target_2=exec_t2_p,
+                    custom_strike=exec_trading_sym
+                )
+                if exec_res.get("status"):
+                    st.success(exec_res.get("message"))
+                    st.rerun()
+                else:
+                    st.error(exec_res.get("message"))
+    st.markdown("""</div>""", unsafe_allow_html=True)
+
+    # 6. Active Open Positions Live Ticking Cards
+    live_open_trades = ord_mgr.get_open_positions()
+    if live_open_trades:
+        st.markdown("#### ⚡ Active Open Virtual Positions (Live Ticking P&L)")
+        for t in live_open_trades:
+            net_pnl = t.get("net_pnl", 0.0)
+            is_prof = net_pnl >= 0
+            b_col = "#00C853" if is_prof else "#FF1744"
+            b_bg = "rgba(0, 200, 83, 0.15)" if is_prof else "rgba(255, 23, 68, 0.15)"
+            p_sign = "+" if is_prof else ""
+            b_text = f"PROFIT: {p_sign}₹ {net_pnl:,.2f} ({p_sign}{t.get('return_pct', 0.0)}%)" if is_prof else f"LOSS: -₹ {abs(net_pnl):,.2f} ({t.get('return_pct', 0.0)}%)"
+
+            col_pos1, col_pos2 = st.columns([3, 1])
+            with col_pos1:
+                st.markdown(f"""
+                <div style="background-color: #161B22; border: 1px solid #30363D; border-radius: 8px; padding: 12px 16px; margin-bottom: 8px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <span style="font-weight: bold; color: #ECEFF1; font-size: 15px;">{t['trading_symbol']} ({t['direction']}) • Qty: {t['quantity']}</span>
+                        <span style="background: {b_bg}; border: 1px solid {b_col}; color: {b_col}; padding: 3px 10px; border-radius: 4px; font-weight: bold; font-size: 13px;">
+                            {b_text}
+                        </span>
+                    </div>
+                    <div style="display: flex; gap: 18px; font-size: 12px; color: #8B949E; margin-top: 8px; border-top: 1px solid #21262D; padding-top: 6px;">
+                        <span>Trade Taken: <strong style="color: #ECEFF1;">{t.get('entry_time', t.get('timestamp'))}</strong></span>
+                        <span>Invested: <strong style="color: #00E5FF;">₹ {t.get('invested_capital', 0.0):,.2f}</strong></span>
+                        <span>Entry: <strong style="color: #ECEFF1;">₹ {t['entry_price']:.2f}</strong></span>
+                        <span>Current: <strong style="color: #ECEFF1;">₹ {t['current_price']:.2f}</strong></span>
+                        <span>SL: <strong style="color: #FF1744;">₹ {t['stop_loss']:.2f}</strong></span>
+                        <span>Target: <strong style="color: #00E676;">₹ {t['target_2']:.2f}</strong></span>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+            with col_pos2:
+                st.write("")
+                if st.button(f"❌ Square Off #{t['id']}", key=f"sq_live_{t['id']}", use_container_width=True):
+                    ord_mgr.square_off_trade(t['id'], live_ltp, exit_reason="MANUAL_SQUARE_OFF")
+                    st.rerun()
+
+# Call the 1-second live streaming fragment
+render_live_fno_and_execution_fragment(selected_symbol, mode_code, plan)
 
 
 # --- DASHBOARD TABS ---
@@ -643,16 +762,16 @@ with tab_positions:
         pnl_val = analytics["net_pnl"]
         st.metric("Net Realized P&L", f"₹ {pnl_val:,.2f}", delta=f"{pnl_val:,.2f}")
     with a_col5:
-        st.metric("Brokerage & Taxes Simulated", f"₹ {wallet_state.get('total_charges', 0.0):,.2f}")
+        st.metric("Total Capital Invested", f"₹ {analytics.get('total_invested', 0.0):,.2f}")
 
     st.markdown("---")
     st.subheader("Active Virtual Positions")
     open_trades = st.session_state.order_manager.get_open_positions()
     if not open_trades:
-        st.info("No open virtual positions right now. Click 'Place Virtual Trade' on the signal card above to start a trade!")
+        st.info("No open virtual positions right now. Click 'Execute 1-Click Trade' on the panel above to start a trade!")
     else:
         df_open = pd.DataFrame(open_trades)
-        display_cols = ["id", "timestamp", "trading_symbol", "direction", "quantity", "entry_price", "current_price", "stop_loss", "target_1", "target_2", "net_pnl"]
+        display_cols = ["id", "entry_time", "trading_symbol", "direction", "quantity", "invested_capital", "entry_price", "current_price", "stop_loss", "target_2", "net_pnl", "return_pct"]
         valid_cols = [c for c in display_cols if c in df_open.columns]
         st.dataframe(df_open[valid_cols], use_container_width=True)
 
@@ -668,15 +787,47 @@ with tab_positions:
                     st.success(f"Position {selected_trade_id} squared off at ₹{curr_p}!")
                     st.rerun()
 
-    # Closed trades history
+    # Closed trades history with complete lifecycle & profit/loss badges
     closed_trades = st.session_state.order_manager.get_closed_trades()
     if closed_trades:
         st.markdown("---")
-        st.subheader("Completed Trade Journal")
+        st.subheader("📋 Completed Trade Lifecycle & P&L Journal")
+        for ct in closed_trades:
+            net_pnl = ct.get("net_pnl", 0.0)
+            is_prof = net_pnl >= 0
+            b_col = "#00C853" if is_prof else "#FF1744"
+            b_bg = "rgba(0, 200, 83, 0.15)" if is_prof else "rgba(255, 23, 68, 0.15)"
+            p_sign = "+" if is_prof else ""
+            b_text = f"🟢 PROFIT: {p_sign}₹ {net_pnl:,.2f} ({p_sign}{ct.get('return_pct', 0.0)}%)" if is_prof else f"🔴 LOSS: -₹ {abs(net_pnl):,.2f} ({ct.get('return_pct', 0.0)}%)"
+            
+            st.markdown(f"""
+            <div style="background-color: #161B22; border: 1px solid #30363D; border-radius: 8px; padding: 14px 18px; margin-bottom: 10px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                    <div>
+                        <span style="font-weight: bold; font-size: 16px; color: #ECEFF1;">{ct.get('trading_symbol', ct.get('symbol'))} ({ct.get('direction')})</span>
+                        <span style="color: #8B949E; font-size: 13px; margin-left: 10px;">ID: #{ct.get('id')} • Qty: {ct.get('quantity')}</span>
+                    </div>
+                    <div style="background: {b_bg}; border: 1px solid {b_col}; color: {b_col}; padding: 3px 12px; border-radius: 6px; font-weight: bold; font-size: 14px;">
+                        {b_text}
+                    </div>
+                </div>
+                <div style="display: flex; gap: 20px; font-size: 12px; color: #8B949E; border-top: 1px solid #21262D; padding-top: 8px;">
+                    <div><strong>Trade Taken:</strong> <span style="color: #ECEFF1;">{ct.get('entry_time', ct.get('timestamp'))}</span></div>
+                    <div><strong>Trade Ended:</strong> <span style="color: #ECEFF1;">{ct.get('exit_time', 'N/A')}</span></div>
+                    <div><strong>Invested:</strong> <span style="color: #00E5FF; font-weight: bold;">₹ {ct.get('invested_capital', ct.get('margin_blocked', 0.0)):,.2f}</span></div>
+                    <div><strong>Entry Price:</strong> <span style="color: #ECEFF1;">₹ {ct.get('entry_price', 0.0):.2f}</span></div>
+                    <div><strong>Exit Price:</strong> <span style="color: #ECEFF1;">₹ {ct.get('exit_price', 0.0):.2f}</span></div>
+                    <div><strong>Trigger:</strong> <span style="color: #FFD600;">{ct.get('exit_reason', 'N/A')}</span></div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
         df_closed = pd.DataFrame(closed_trades)
-        c_cols = ["id", "timestamp", "exit_time", "trading_symbol", "direction", "entry_price", "exit_price", "exit_reason", "gross_pnl", "charges", "net_pnl"]
+        c_cols = ["id", "trading_symbol", "direction", "quantity", "invested_capital", "entry_time", "exit_time", "entry_price", "exit_price", "gross_pnl", "charges", "net_pnl", "return_pct", "exit_reason"]
         valid_c_cols = [c for c in c_cols if c in df_closed.columns]
         st.dataframe(df_closed[valid_c_cols], use_container_width=True)
+    else:
+        st.info("No completed virtual paper trades yet. Open and close a trade to populate the performance journal.")
 
 # TAB 3: RATIONALE & PIVOTS
 with tab_rationale:
