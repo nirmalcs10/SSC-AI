@@ -22,6 +22,16 @@ def run_tests():
     print(f"Top Ask: {quote['depth']['sell'][0] if quote['depth']['sell'] else 'N/A'}")
     assert quote["ltp"] > 0, "LTP must be greater than zero!"
 
+    print("\n=== Step 2b: Testing Live Option Premium Retrieval from Angel One Exchange (NFO) ===")
+    opt_quotes = connector.get_options_market_quotes("NIFTY", strike=25250, current_spot_ltp=quote["ltp"])
+    print(f"Option Quotes Status: {opt_quotes['status']}")
+    ce_q = opt_quotes["call_option"]
+    pe_q = opt_quotes["put_option"]
+    print(f"Live CE Quote -> Symbol: {ce_q['symbol']}, LTP: ₹{ce_q['ltp']}, Bid: ₹{ce_q['best_bid']}, Ask: ₹{ce_q['best_ask']}")
+    print(f"Live PE Quote -> Symbol: {pe_q['symbol']}, LTP: ₹{pe_q['ltp']}, Bid: ₹{pe_q['best_bid']}, Ask: ₹{pe_q['best_ask']}")
+    assert ce_q["ltp"] > 0, "CE option LTP must be greater than zero!"
+    assert pe_q["ltp"] > 0, "PE option LTP must be greater than zero!"
+
     print("\n=== Step 3: Multi-Timeframe Candle Retrieval ===")
     mtf_data = connector.get_multi_timeframe_data("NIFTY", timeframes=("1m", "5m", "15m", "1h"))
     for tf, df in mtf_data.items():

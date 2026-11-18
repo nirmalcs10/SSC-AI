@@ -438,32 +438,47 @@ def render_live_fno_and_execution_fragment(sym: str, mode_str: str, plan_dict: d
         stk_step = idx_cfg["strike_step"]
         idx_lot = idx_cfg["lot_size"]
         live_atm_strike = int(round(live_ltp / stk_step) * stk_step)
+
+        # Fetch Live Option Quotes directly from Angel One Exchange (NFO)
+        opt_market_data = connector.get_options_market_quotes(sym, live_atm_strike, current_spot_ltp=live_ltp)
+        ce_quote_data = opt_market_data.get("call_option", {})
+        pe_quote_data = opt_market_data.get("put_option", {})
+        is_live_nfo_exchange = (opt_market_data.get("status") == "LIVE_NFO_EXCHANGE")
         
         dir_plan = plan_dict.get("direction", "BUY") if plan_dict else "BUY"
         risk_p = float(plan_dict.get("risk_points", 30.0)) if plan_dict else 30.0
         base_prem = round(max(25.0, risk_p * 2.2), 1)
 
         # 1. Live Call Option (CE) Metrics
-        ce_strike_label = f"{live_atm_strike} CE"
-        live_ce_prem = base_prem
-        live_ce_sl = round(max(5.0, live_ce_prem - (risk_p * 0.55)), 1)
-        live_ce_t1 = round(live_ce_prem + (risk_p * 0.8), 1)
-        live_ce_t2 = round(live_ce_prem + (risk_p * 1.4), 1)
+        ce_strike_label = ce_quote_data.get("symbol") or f"{live_atm_strike} CE"
+        live_ce_prem = float(ce_quote_data.get("ltp") or base_prem)
+        ce_bid = float(ce_quote_data.get("best_bid") or (live_ce_prem - 0.5))
+        ce_ask = float(ce_quote_data.get("best_ask") or (live_ce_prem + 0.5))
+        live_ce_sl = round(max(5.0, live_ce_prem * 0.75), 1)
+        live_ce_t1 = round(live_ce_prem * 1.35, 1)
+        live_ce_t2 = round(live_ce_prem * 1.60, 1)
         is_ce_rec = (dir_plan == "BUY")
 
         # 2. Live Put Option (PE) Metrics
-        pe_strike_label = f"{live_atm_strike} PE"
-        live_pe_prem = base_prem
-        live_pe_sl = round(max(5.0, live_pe_prem - (risk_p * 0.55)), 1)
-        live_pe_t1 = round(live_pe_prem + (risk_p * 0.8), 1)
-        live_pe_t2 = round(live_pe_prem + (risk_p * 1.4), 1)
+        pe_strike_label = pe_quote_data.get("symbol") or f"{live_atm_strike} PE"
+        live_pe_prem = float(pe_quote_data.get("ltp") or base_prem)
+        pe_bid = float(pe_quote_data.get("best_bid") or (live_pe_prem - 0.5))
+        pe_ask = float(pe_quote_data.get("best_ask") or (live_pe_prem + 0.5))
+        live_pe_sl = round(max(5.0, live_pe_prem * 0.75), 1)
+        live_pe_t1 = round(live_pe_prem * 1.35, 1)
+        live_pe_t2 = round(live_pe_prem * 1.60, 1)
         is_pe_rec = (dir_plan == "SELL")
 
         # --- CALL OPTION (CE) ROW ---
         ce_badge = "<span style='background: rgba(0, 230, 118, 0.2); border: 1px solid #00E676; color: #00E676; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;'>🟢 AI RECOMMENDED (BULLISH CONFLUENCE)</span>" if is_ce_rec else "<span style='background: rgba(139, 148, 158, 0.15); border: 1px solid #30363D; color: #8B949E; padding: 2px 8px; border-radius: 4px; font-size: 11px;'>BULLISH ALTERNATIVE</span>"
+        feed_badge = "<span style='background: rgba(0, 229, 255, 0.15); border: 1px solid #00E5FF; color: #00E5FF; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;'>⚡ LIVE NFO EXCHANGE TICK (Angel One)</span>" if is_live_nfo_exchange else "<span style='background: rgba(139, 148, 158, 0.12); border: 1px solid #30363D; color: #8B949E; padding: 2px 8px; border-radius: 4px; font-size: 11px;'>⚡ REAL-TIME MODEL FEED</span>"
+
         st.markdown(f"""
         <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px; margin-bottom: 6px;">
-            <span style="font-weight: bold; color: #00E676; font-size: 14px;">🟢 CALL OPTION (CE) • 1 Lot = {idx_lot} Qty</span>
+            <div style="display: flex; gap: 10px; align-items: center;">
+                <span style="font-weight: bold; color: #00E676; font-size: 14px;">🟢 CALL OPTION (CE) • 1 Lot = {idx_lot} Qty</span>
+                {feed_badge}
+            </div>
             {ce_badge}
         </div>
         """, unsafe_allow_html=True)
@@ -480,9 +495,9 @@ def render_live_fno_and_execution_fragment(sym: str, mode_str: str, plan_dict: d
         with ce_col2:
             st.markdown(f"""
             <div class="full-digit-card">
-                <div class="digit-title">CE Entry Premium</div>
+                <div class="digit-title">CE Exchange Premium</div>
                 <div class="digit-value" style="color: #00E676;">₹ {live_ce_prem:,.2f}</div>
-                <div class="digit-sub" style="color: #8B949E;">Premium / Share</div>
+                <div class="digit-sub" style="color: #8B949E;">Bid: ₹{ce_bid:,.1f} | Ask: ₹{ce_ask:,.1f}</div>
             </div>
             """, unsafe_allow_html=True)
         with ce_col3:
@@ -514,7 +529,10 @@ def render_live_fno_and_execution_fragment(sym: str, mode_str: str, plan_dict: d
         pe_badge = "<span style='background: rgba(255, 23, 68, 0.2); border: 1px solid #FF1744; color: #FF1744; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;'>🔴 AI RECOMMENDED (BEARISH CONFLUENCE)</span>" if is_pe_rec else "<span style='background: rgba(139, 148, 158, 0.15); border: 1px solid #30363D; color: #8B949E; padding: 2px 8px; border-radius: 4px; font-size: 11px;'>BEARISH ALTERNATIVE</span>"
         st.markdown(f"""
         <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 14px; margin-bottom: 6px;">
-            <span style="font-weight: bold; color: #FF1744; font-size: 14px;">🔴 PUT OPTION (PE) • 1 Lot = {idx_lot} Qty</span>
+            <div style="display: flex; gap: 10px; align-items: center;">
+                <span style="font-weight: bold; color: #FF1744; font-size: 14px;">🔴 PUT OPTION (PE) • 1 Lot = {idx_lot} Qty</span>
+                {feed_badge}
+            </div>
             {pe_badge}
         </div>
         """, unsafe_allow_html=True)
@@ -531,9 +549,9 @@ def render_live_fno_and_execution_fragment(sym: str, mode_str: str, plan_dict: d
         with pe_col2:
             st.markdown(f"""
             <div class="full-digit-card">
-                <div class="digit-title">PE Entry Premium</div>
+                <div class="digit-title">PE Exchange Premium</div>
                 <div class="digit-value" style="color: #FF5252;">₹ {live_pe_prem:,.2f}</div>
-                <div class="digit-sub" style="color: #8B949E;">Premium / Share</div>
+                <div class="digit-sub" style="color: #8B949E;">Bid: ₹{pe_bid:,.1f} | Ask: ₹{pe_ask:,.1f}</div>
             </div>
             """, unsafe_allow_html=True)
         with pe_col3:

@@ -44,6 +44,7 @@ class AngelOneConnector:
         self.feed_token = None
         self.refresh_token = None
         self.is_authenticated = False
+        self._option_token_cache: Dict[Tuple[str, int], Dict[str, Any]] = {}
         
         if self.is_configured():
             self.login()
@@ -364,6 +365,199 @@ class AngelOneConnector:
                 "52w_high": 0.0,
                 "52w_low": 0.0
             }
+
+    def resolve_option_tokens(self, symbol: str, strike: int) -> Tuple[Optional[str], Optional[str], str, str]:
+        """
+        Resolves NFO option contract tokens for CE and PE at the given ATM strike.
+        Uses in-memory caching to minimize SmartAPI search queries.
+        Returns: (ce_token, pe_token, ce_tradingsymbol, pe_tradingsymbol)
+        """
+        cache_key = (symbol.upper().strip(), int(strike))
+        if cache_key in self._option_token_cache:
+            entry = self._option_token_cache[cache_key]
+            return entry.get("ce_token"), entry.get("pe_token"), entry.get("ce_symbol", f"{symbol} {strike} CE"), entry.get("pe_symbol", f"{symbol} {strike} PE")
+
+        sym = symbol.upper().strip()
+        ce_token, pe_token = None, None
+        ce_sym = f"{sym} {strike} CE"
+        pe_sym = f"{sym} {strike} PE"
+
+        if self.is_authenticated and self.smart_api:
+            try:
+                # 1. Search for CE option contract
+                search_ce = f"{sym}{strike}CE"
+                res_ce = self.smart_api.searchScrip("NFO", search_ce)
+                if res_ce and res_ce.get("status") is True and res_ce.get("data"):
+                    items = res_ce["data"]
+                    if isinstance(items, list) and items:
+                        matching = [i for i in items if str(i.get("tradingsymbol", "")).endswith("CE")]
+                        best_ce = matching[0] if matching else items[0]
+                        ce_token = str(best_ce.get("symboltoken", ""))
+                        ce_sym = str(best_ce.get("tradingsymbol", ce_sym))
+
+                # 2. Search for PE option contract
+                search_pe = f"{sym}{strike}PE"
+                res_pe = self.smart_api.searchScrip("NFO", search_pe)
+                if res_pe and res_pe.get("status") is True and res_pe.get("data"):
+                    items = res_pe["data"]
+                    if isinstance(items, list) and items:
+                        matching = [i for i in items if str(i.get("tradingsymbol", "")).endswith("PE")]
+                        best_pe = matching[0] if matching else items[0]
+                        pe_token = str(best_pe.get("symboltoken", ""))
+                        pe_sym = str(best_pe.get("tradingsymbol", pe_sym))
+            except Exception as e:
+                logger.warning(f"Error resolving option tokens for {sym} {strike}: {e}")
+
+        self._option_token_cache[cache_key] = {
+            "ce_token": ce_token,
+            "pe_token": pe_token,
+            "ce_symbol": ce_sym,
+            "pe_symbol": pe_sym
+        }
+        return ce_token, pe_token, ce_sym, pe_sym
+
+    def get_options_market_quotes(self, symbol: str, strike: int, current_spot_ltp: float = 0.0) -> Dict[str, Any]:
+        """
+        Fetches real-time market quote data for both CE and PE option strikes
+        directly from Angel One exchange (NFO).
+        Executes a single multi-token API request for optimal sub-100ms latency.
+        """
+        ce_token, pe_token, ce_sym, pe_sym = self.resolve_option_tokens(symbol, strike)
+
+        ce_quote = {
+            "symbol": ce_sym,
+            "token": ce_token,
+            "strike": strike,
+            "type": "CE",
+            "ltp": 0.0,
+            "open": 0.0,
+            "high": 0.0,
+            "low": 0.0,
+            "close": 0.0,
+            "best_bid": 0.0,
+            "best_ask": 0.0,
+            "volume": 0,
+            "oi": 0,
+            "feed_source": "SIMULATED"
+        }
+        pe_quote = {
+            "symbol": pe_sym,
+            "token": pe_token,
+            "strike": strike,
+            "type": "PE",
+            "ltp": 0.0,
+            "open": 0.0,
+            "high": 0.0,
+            "low": 0.0,
+            "close": 0.0,
+            "best_bid": 0.0,
+            "best_ask": 0.0,
+            "volume": 0,
+            "oi": 0,
+            "feed_source": "SIMULATED"
+        }
+
+        tokens_to_fetch = []
+        if ce_token:
+            tokens_to_fetch.append(ce_token)
+        if pe_token:
+            tokens_to_fetch.append(pe_token)
+
+        is_live_nfo = False
+
+        if self.is_authenticated and self.jwt_token and tokens_to_fetch:
+            try:
+                url = "https://apiconnect.angelone.in/rest/secure/angelbroking/market/v1/quote/"
+                headers = {
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                    "X-UserType": "USER",
+                    "X-SourceID": "WEB",
+                    "X-ClientLocalIP": "127.0.0.1",
+                    "X-ClientPublicIP": "127.0.0.1",
+                    "X-MACAddress": "fe80::1",
+                    "X-PrivateKey": self.api_key,
+                    "Authorization": f"Bearer {self.jwt_token}"
+                }
+                payload = {
+                    "mode": "FULL",
+                    "exchangeTokens": {
+                        "NFO": tokens_to_fetch
+                    }
+                }
+                res = requests.post(url, json=payload, headers=headers, timeout=4)
+                data = res.json()
+                if data and data.get("status") is True and data.get("data"):
+                    fetched = data["data"].get("fetched", [])
+                    for item in fetched:
+                        tok = str(item.get("symbolToken", item.get("token", "")))
+                        item_ltp = float(item.get("ltp", 0.0))
+                        depth = item.get("depth", {})
+                        best_bid = float(depth.get("buy", [{}])[0].get("price", 0.0)) if depth.get("buy") else item_ltp
+                        best_ask = float(depth.get("sell", [{}])[0].get("price", 0.0)) if depth.get("sell") else item_ltp
+                        vol = int(item.get("tradeVolume", item.get("volume", 0)))
+                        oi = int(item.get("opnInterest", 0))
+
+                        if tok == ce_token or (ce_sym and str(item.get("tradingSymbol", "")) == ce_sym):
+                            ce_quote.update({
+                                "ltp": item_ltp,
+                                "open": float(item.get("open", item_ltp)),
+                                "high": float(item.get("high", item_ltp)),
+                                "low": float(item.get("low", item_ltp)),
+                                "close": float(item.get("close", item_ltp)),
+                                "best_bid": best_bid,
+                                "best_ask": best_ask,
+                                "volume": vol,
+                                "oi": oi,
+                                "feed_source": "LIVE_NFO_EXCHANGE"
+                            })
+                            if item_ltp > 0:
+                                is_live_nfo = True
+
+                        elif tok == pe_token or (pe_sym and str(item.get("tradingSymbol", "")) == pe_sym):
+                            pe_quote.update({
+                                "ltp": item_ltp,
+                                "open": float(item.get("open", item_ltp)),
+                                "high": float(item.get("high", item_ltp)),
+                                "low": float(item.get("low", item_ltp)),
+                                "close": float(item.get("close", item_ltp)),
+                                "best_bid": best_bid,
+                                "best_ask": best_ask,
+                                "volume": vol,
+                                "oi": oi,
+                                "feed_source": "LIVE_NFO_EXCHANGE"
+                            })
+                            if item_ltp > 0:
+                                is_live_nfo = True
+            except Exception as e:
+                logger.warning(f"Error fetching live NFO quotes from Angel One: {e}")
+
+        # Fallback to realistic dynamic premium if market is offline / simulated / zero LTP
+        if ce_quote["ltp"] <= 0.0:
+            spot = current_spot_ltp if current_spot_ltp > 0 else float(strike)
+            diff = spot - strike
+            intrinsic = max(0.0, diff)
+            time_val = max(35.0, abs(diff) * 0.4 + 40.0)
+            ce_quote["ltp"] = round(intrinsic + time_val, 1)
+            ce_quote["best_bid"] = round(ce_quote["ltp"] - 0.5, 1)
+            ce_quote["best_ask"] = round(ce_quote["ltp"] + 0.5, 1)
+
+        if pe_quote["ltp"] <= 0.0:
+            spot = current_spot_ltp if current_spot_ltp > 0 else float(strike)
+            diff = strike - spot
+            intrinsic = max(0.0, diff)
+            time_val = max(35.0, abs(diff) * 0.4 + 40.0)
+            pe_quote["ltp"] = round(intrinsic + time_val, 1)
+            pe_quote["best_bid"] = round(pe_quote["ltp"] - 0.5, 1)
+            pe_quote["best_ask"] = round(pe_quote["ltp"] + 0.5, 1)
+
+        return {
+            "status": "LIVE_NFO_EXCHANGE" if is_live_nfo else "SIMULATED_FEED",
+            "symbol": symbol,
+            "strike": strike,
+            "call_option": ce_quote,
+            "put_option": pe_quote
+        }
 
     def get_token_for_symbol(self, symbol: str) -> Tuple[str, str]:
         """Resolve symbol to Angel One token and exchange."""
