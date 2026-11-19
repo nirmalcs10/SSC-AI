@@ -279,6 +279,29 @@ if plan:
             st.session_state["show_why_signal"] = not why_active
             st.rerun()
 
+    # Active High-Probability Option Trading Pattern Card (Tier-1)
+    primary_pat = plan.get("primary_pattern")
+    if primary_pat:
+        p_name = primary_pat["pattern_name"]
+        p_opt = primary_pat["recommended_option"]
+        p_conf = primary_pat["confidence"]
+        p_desc = primary_pat["description"]
+        p_col = "#00E676" if primary_pat["direction"] == "BUY" else "#FF1744"
+        p_bg = "rgba(0, 230, 118, 0.12)" if primary_pat["direction"] == "BUY" else "rgba(255, 23, 68, 0.12)"
+        st.markdown(f"""
+        <div style="background: #161B22; border: 1px solid {p_col}; border-left: 5px solid {p_col}; border-radius: 8px; padding: 10px 16px; margin: 8px 0 12px 0; display: flex; justify-content: space-between; align-items: center;">
+            <div>
+                <span style="color: {p_col}; font-weight: bold; font-size: 14px;">🎯 High-Probability Option Setup: {p_name}</span>
+                <span style="background: {p_bg}; color: {p_col}; font-size: 11px; font-weight: bold; padding: 2px 8px; border-radius: 4px; margin-left: 10px;">{p_opt}</span>
+                <div style="color: #8B949E; font-size: 12px; margin-top: 3px;">{p_desc}</div>
+            </div>
+            <div style="text-align: right; min-width: 90px;">
+                <span style="font-size: 11px; color: #8B949E;">Quality</span><br>
+                <span style="font-size: 16px; font-weight: bold; color: {p_col};">{p_conf}%</span>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
     # Dedicated AI Decision Breakdown & Chart Rationale Explainer
     if st.session_state.get("show_why_signal", False):
         dec_summary = plan.get("decision_summary", "")

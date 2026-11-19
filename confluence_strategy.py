@@ -36,6 +36,7 @@ from config import (
 )
 from indicator_engine import IndicatorEngine
 from level_detector import LevelDetector
+from pattern_engine import PatternEngine
 
 
 class ConfluenceStrategy:
@@ -90,6 +91,10 @@ class ConfluenceStrategy:
         sr_zones = LevelDetector.detect_support_resistance_zones(df_30m if df_30m is not None else df_15m)
         fvgs = LevelDetector.detect_fair_value_gaps(df_5m if df_5m is not None else df_15m)
         obs = LevelDetector.detect_order_blocks(df_5m if df_5m is not None else df_15m)
+
+        # Detect High-Probability Option Trading Patterns (Tier 1 & Tier 2)
+        active_patterns = PatternEngine.detect_all(df_5m=df_5m, df_3m=df_3m, pdh_pdl=pdh_pdl)
+        primary_pattern = active_patterns[0] if active_patterns else None
 
         # Multi-Timeframe Scoring System (-100 to +100) & Structured Rationale
         score = 0
@@ -332,6 +337,19 @@ class ConfluenceStrategy:
                     "detail": f"Candle body or volume ({c_vol:,.0f} vs avg {c_vol_ma:,.0f}) lacks decisive breakout momentum",
                     "points": 0
                 })
+
+        # Option Chart Pattern Confluence (Tier 1 High-Probability Setup)
+        if primary_pattern:
+            pat_dir = primary_pattern["direction"]
+            pat_pts = 15 if pat_dir == "BUY" else -15
+            score += pat_pts
+            reasons.append(f"Option Pattern: {primary_pattern['pattern_name']} ({primary_pattern['recommended_option']})")
+            detailed_rationale["execution"].append({
+                "factor": f"Option Pattern: {primary_pattern['pattern_name']}",
+                "status": "BULLISH" if pat_dir == "BUY" else "BEARISH",
+                "detail": primary_pattern["description"],
+                "points": pat_pts
+            })
 
         # -------------------------------------------------------------
         # 6. Live Order Flow & Depth (10 Points)
@@ -597,6 +615,8 @@ class ConfluenceStrategy:
             "fvgs": fvgs,
             "order_blocks": obs,
             "reasons": reasons,
+            "primary_pattern": primary_pattern,
+            "detected_patterns": active_patterns,
             "detailed_rationale": detailed_rationale,
             "decision_summary": decision_summary
         }

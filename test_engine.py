@@ -109,6 +109,16 @@ def run_tests():
             print(f"Verified Rationale [{sec} -> {factor_dict['factor']}]: {factor_dict['status']}")
     print(f"Decision Summary: {plan['decision_summary']}")
 
+    print("\n=== Step 4b: Testing High-Probability Option Pattern Engine ===")
+    from pattern_engine import PatternEngine
+    patterns = PatternEngine.detect_all(df_5m=df_5m_ind, df_3m=mtf_data.get("3m"))
+    print(f"Detected {len(patterns)} active option setups: {[p['pattern_name'] for p in patterns]}")
+    assert "detected_patterns" in plan, "detected_patterns must be in plan"
+    if plan.get("primary_pattern"):
+        pat = plan["primary_pattern"]
+        print(f"Primary Option Setup: {pat['pattern_name']} ({pat['recommended_option']}) | Quality: {pat['confidence']}%")
+        assert "pattern_name" in pat and "direction" in pat and "invalidation_level" in pat
+
     print("\n=== Step 5: Testing Institutional Risk Management Guard (Pillar 4) ===")
     test_wallet_file = Path(__file__).resolve().parent / "data" / "test_risk_wallet_final.json"
     test_trades_file = Path(__file__).resolve().parent / "data" / "test_risk_trades_final.json"
