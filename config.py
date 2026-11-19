@@ -69,15 +69,24 @@ POPULAR_STOCKS = {
 # Supported Intervals
 INTERVAL_MAPPING = {
     "1m": "ONE_MINUTE",
+    "3m": "THREE_MINUTE",
     "5m": "FIVE_MINUTE",
     "15m": "FIFTEEN_MINUTE",
+    "30m": "THIRTY_MINUTE",
     "1h": "ONE_HOUR",
     "1D": "ONE_DAY"
 }
 
-# Strategy Thresholds
+# Strategy & Risk Management Thresholds (Pillars 2 & 4)
 ATR_MULTIPLIER_SL = 1.5
-RR_RATIO_TARGET_1 = 1.5
-RR_RATIO_TARGET_2 = 2.5
+RR_RATIO_TARGET_1 = 2.0  # Target at least 1:2 Risk/Reward
+RR_RATIO_TARGET_2 = 3.0  # 1:3 RR Extension
+RR_RATIO_TARGET_3 = 4.0  # 1:4 RR Major Target
 CONFLUENCE_BUY_THRESHOLD = 70
 CONFLUENCE_SELL_THRESHOLD = -70
+
+# Risk Management Institutional Rules (Pillar 4)
+RISK_PER_TRADE_PERCENT = 0.01          # 0.5%–1.0% of Capital per Trade
+DAILY_LOSS_LIMIT_PERCENT = 0.02        # 2.0% of Capital Circuit Breaker
+DAILY_MAX_TRADES = 3                   # 1–3 Quality Setups Maximum
+REVENGE_TRADING_COOLDOWN_MINUTES = 15  # Anti-Revenge Trading Lockout Cooldown (Minutes)

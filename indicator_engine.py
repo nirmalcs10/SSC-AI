@@ -1,6 +1,6 @@
 """
 Technical indicator computation engine.
-Calculates VWAP, EMAs, Supertrend, ATR, RSI, and Bollinger Bands with high performance.
+Calculates VWAP, EMAs, Supertrend, ATR, RSI, Volume MA, and Bollinger Bands with high performance.
 """
 import pandas as pd
 import numpy as np
@@ -48,13 +48,26 @@ class IndicatorEngine:
         return rsi.fillna(50.0)
 
     @staticmethod
+    def calculate_volume_ma(df: pd.DataFrame, period: int = 20) -> pd.Series:
+        """Calculates 20-period moving average of volume for breakout confirmation."""
+        if "volume" not in df.columns:
+            return pd.Series([0.0] * len(df), index=df.index)
+        return df["volume"].rolling(window=period, min_periods=1).mean()
+
+    @staticmethod
     def calculate_vwap(df: pd.DataFrame) -> pd.DataFrame:
         """
         Calculates intraday VWAP that resets every market day.
         Also computes +1 and -1 standard deviation bands.
+        Handles zero-volume index spot feeds gracefully by using price-range proxy.
         """
         res = df.copy()
         typical_price = (res["high"] + res["low"] + res["close"]) / 3.0
+
+        # If volume is zero across the dataset (common for index tickers), use price range as activity weight
+        if "volume" not in res.columns or res["volume"].sum() == 0:
+            res["volume"] = ((res["high"] - res["low"]).abs() + (res["close"] * 0.0005)) * 1000.0
+
         res["pv"] = typical_price * res["volume"]
         
         # Group by date if datetime column is present
@@ -79,6 +92,8 @@ class IndicatorEngine:
             res["vwap_lower"] = res["vwap"] * 0.998
             res.drop(columns=["pv"], errors="ignore", inplace=True)
             
+        # Ensure no remaining zero VWAP values
+        res["vwap"] = res["vwap"].replace(0, np.nan).fillna(typical_price)
         return res
 
     @staticmethod
@@ -133,12 +148,18 @@ class IndicatorEngine:
         if df.empty:
             return df
         res = df.copy()
+
+        # If volume is zero across the dataset (common for index tickers), synthesize volume from price volatility
+        if "volume" not in res.columns or res["volume"].sum() == 0:
+            res["volume"] = ((res["high"] - res["low"]).abs() + (res["close"] * 0.0005)) * 1000.0
+
         res["ema_9"] = cls.calculate_ema(res, 9)
         res["ema_21"] = cls.calculate_ema(res, 21)
         res["ema_50"] = cls.calculate_ema(res, 50)
         res["ema_200"] = cls.calculate_ema(res, 200)
         res["atr"] = cls.calculate_atr(res, 14)
         res["rsi"] = cls.calculate_rsi(res, 14)
+        res["volume_ma20"] = cls.calculate_volume_ma(res, 20)
         
         # Apply VWAP
         res = cls.calculate_vwap(res)

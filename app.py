@@ -217,20 +217,24 @@ for alert in alerts:
         st.warning(f"⚡ {alert['message']}")
 
 
-# --- MAIN LOGIC ---
-timeframes = ("15m", "1h", "1D") if mode_code == "SWING" else ("1m", "5m", "15m", "1h")
+# --- MAIN LOGIC (Pillars 1, 2 & 3) ---
+timeframes = ("3m", "5m", "15m", "30m", "1D")
 
 # Automatically trigger when symbol or trading mode changes, or on initial load / analyze button click
 symbol_changed = ("current_symbol" not in st.session_state) or (st.session_state.current_symbol != selected_symbol)
 mode_changed = ("current_mode" not in st.session_state) or (st.session_state.current_mode != mode_code)
 
 if analyze_btn or symbol_changed or mode_changed or st.session_state.last_analysis is None:
-    with st.spinner(f"Fetching multi-timeframe candles (1m, 5m, 15m, 1h) for {selected_symbol}..."):
+    with st.spinner(f"Fetching 5-timeframe candles (Daily, 30m, 15m, 5m, 3m) & Option Chain for {selected_symbol}..."):
         mtf_data = connector.get_multi_timeframe_data(selected_symbol, timeframes=timeframes)
         st.session_state.mtf_data = mtf_data
         
+        # Ingest Option Chain Analysis
+        option_chain_data = connector.get_option_chain_analysis(selected_symbol, current_spot_ltp=float(live_quote.get("ltp", 0.0)))
+        st.session_state.option_chain_data = option_chain_data
+
         strategy = ConfluenceStrategy(symbol=selected_symbol, mode=mode_code)
-        plan = strategy.analyze(mtf_data, live_quote=live_quote)
+        plan = strategy.analyze(mtf_data, live_quote=live_quote, option_chain=option_chain_data)
         st.session_state.last_analysis = plan
         st.session_state.current_symbol = selected_symbol
         st.session_state.current_mode = mode_code
@@ -244,7 +248,7 @@ mtf_data = st.session_state.mtf_data
 col_head1, col_head2 = st.columns([3, 1])
 with col_head1:
     st.title(f"{selected_symbol} — Multi-Timeframe Automated Plan")
-    st.caption(f"Current Mode: **{mode}** | Timeframes: **{', '.join(timeframes)}** | Updated: {datetime.datetime.now().strftime('%H:%M:%S IST')}")
+    st.caption(f"Current Mode: **{mode}** | Timeframes: **Daily (Major Trend/SR) • 30m (Market Dir) • 15m (Trend) • 5m (Setup) • 3m (Trigger)** | Updated: {datetime.datetime.now().strftime('%H:%M:%S IST')}")
 with col_head2:
     if plan:
         st.metric("Setup Current Price", f"₹ {plan.get('current_price', 0.0):,.2f}")
@@ -841,8 +845,29 @@ def render_live_fno_and_execution_fragment(sym: str, mode_str: str, plan_dict: d
         st.write("")
         st.markdown(f"**Target Contract:** `{exec_trading_sym}` | **Invested Capital:** <span style='color: #00E5FF; font-weight: bold;'>₹ {invested_amount:,.2f}</span>", unsafe_allow_html=True)
         st.caption(f"SL: ₹{exec_sl_p:,.1f} | T1: ₹{exec_t1_p:,.1f} | Available Margin: ₹{ord_mgr.wallet['balance']:,.2f}")
+        # Risk Management Guard Check (Pillar 4)
+        risk_guard = ord_mgr.get_risk_status()
+        is_blocked = False
+        block_reason = ""
+
+        if risk_guard["is_circuit_breaker_tripped"]:
+            is_blocked = True
+            block_reason = f"🚨 Daily Loss Circuit Breaker Active (-₹{abs(risk_guard['today_realized_pnl']):,.2f} <= -2.0%). Trading halted for today."
+            st.error(block_reason)
+        elif not risk_guard["can_trade_daily"]:
+            is_blocked = True
+            block_reason = f"🛑 Daily Trade Limit Reached ({risk_guard['daily_trades_count']}/3 setups). Overtrading prevention active."
+            st.warning(block_reason)
+        elif risk_guard["revenge_cooldown_active"]:
+            is_blocked = True
+            block_reason = f"⏳ Revenge Trading Protection Active ({risk_guard['cooldown_remaining_min']}m cooldown remaining). Never revenge trade."
+            st.warning(block_reason)
+
         btn_text = f"🚀 Execute 1-Click {exec_direction} ({trade_lots} Lot = {total_contracts} Qty)" if is_idx else f"🚀 Execute 1-Click {exec_direction} ({total_contracts} Shares)"
-        if st.button(btn_text, type="primary", use_container_width=True, key=f"btn_exec_{sym}"):
+        if is_blocked:
+            btn_text = f"🔒 Trade Execution Blocked: {block_reason[:38]}..."
+            st.button(btn_text, disabled=True, use_container_width=True, key=f"btn_exec_{sym}")
+        elif st.button(btn_text, type="primary", use_container_width=True, key=f"btn_exec_{sym}"):
             with st.spinner("Executing virtual paper trade..."):
                 exec_res = ord_mgr.execute_custom_trade(
                     symbol=sym,
@@ -909,9 +934,11 @@ def render_live_fno_and_execution_fragment(sym: str, mode_str: str, plan_dict: d
 render_live_fno_and_execution_fragment(selected_symbol, mode_code, plan)
 
 
-# --- DASHBOARD TABS ---
-tab_chart, tab_positions, tab_rationale, tab_diagnostics = st.tabs([
+# --- DASHBOARD TABS (4 Pillars) ---
+tab_chart, tab_option_chain, tab_risk_guard, tab_positions, tab_rationale, tab_diagnostics = st.tabs([
     "📊 Multi-Timeframe Chart & Overlays",
+    "⛓️ Option Chain Analysis (OI, PCR, IV)",
+    "🛡️ Institutional Risk Management Guard",
     "💼 Paper Trades & Performance Analytics",
     "📋 Strategy Rationale & S/R Pivots",
     "⚙️ Angel One Data Diagnostic"
@@ -933,9 +960,16 @@ with tab_chart:
     with view_col2:
         if "Quad" not in chart_view_mode:
             chart_tf = st.radio(
-                "Timeframe:",
-                options=list(timeframes),
-                index=1 if "5m" in timeframes else 0,
+                "Timeframe Role:",
+                options=["1D", "30m", "15m", "5m", "3m"],
+                format_func=lambda x: {
+                    "1D": "Daily (Major S/R)",
+                    "30m": "30m (Market Dir)",
+                    "15m": "15m (Trend)",
+                    "5m": "5m (Setup)",
+                    "3m": "3m (Trigger)"
+                }.get(x, x),
+                index=3,
                 horizontal=True
             )
 
@@ -1051,6 +1085,179 @@ with tab_chart:
                         is_grid_compact=True
                     )
                     st.plotly_chart(fig_r, use_container_width=True, config=plotly_config)
+
+
+# TAB: OPTION CHAIN ANALYSIS (PILLAR 3)
+with tab_option_chain:
+    st.subheader(f"⛓️ Live Option Chain Analysis — {selected_symbol}")
+    st.caption("Institutional Open Interest (OI), PCR, Call/Put Writing, and Spot Price Action Confirmation.")
+
+    oc_data = st.session_state.get("option_chain_data")
+    if not oc_data:
+        oc_data = connector.get_option_chain_analysis(selected_symbol, current_spot_ltp=live_ltp)
+        st.session_state.option_chain_data = oc_data
+
+    # Metric Row 1: PCR & Institutional Sentiment
+    oc_col1, oc_col2, oc_col3, oc_col4 = st.columns(4)
+    with oc_col1:
+        pcr_val = oc_data.get("pcr", 1.0)
+        pcr_sent = oc_data.get("pcr_sentiment", "NEUTRAL")
+        p_badge_col = "#00E676" if pcr_sent == "BULLISH" else ("#FF1744" if pcr_sent == "BEARISH" else "#FFD600")
+        st.markdown(f"""
+        <div style="background: #161B22; border: 1px solid #30363D; border-radius: 8px; padding: 12px; text-align: center;">
+            <div style="color: #8B949E; font-size: 12px;">PUT-CALL RATIO (PCR)</div>
+            <div style="color: {p_badge_col}; font-size: 26px; font-weight: bold; margin: 4px 0;">{pcr_val:.2f}</div>
+            <span style="background: rgba(255,255,255,0.08); color: {p_badge_col}; font-size: 11px; font-weight: bold; padding: 2px 8px; border-radius: 4px;">{pcr_sent} BIAS</span>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with oc_col2:
+        put_supp = oc_data.get("put_support_strike", 0)
+        put_oi = oc_data.get("put_support_oi", 0)
+        st.markdown(f"""
+        <div style="background: #161B22; border: 1px solid rgba(0, 230, 118, 0.3); border-radius: 8px; padding: 12px; text-align: center;">
+            <div style="color: #00E676; font-size: 12px; font-weight: bold;">PUT WRITING SUPPORT</div>
+            <div style="color: #ECEFF1; font-size: 24px; font-weight: bold; margin: 4px 0;">₹ {put_supp:,}</div>
+            <span style="color: #8B949E; font-size: 11px;">Max Put OI: {put_oi:,} contracts</span>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with oc_col3:
+        call_res = oc_data.get("call_resistance_strike", 0)
+        call_oi = oc_data.get("call_resistance_oi", 0)
+        st.markdown(f"""
+        <div style="background: #161B22; border: 1px solid rgba(255, 23, 68, 0.3); border-radius: 8px; padding: 12px; text-align: center;">
+            <div style="color: #FF1744; font-size: 12px; font-weight: bold;">CALL WRITING RESISTANCE</div>
+            <div style="color: #ECEFF1; font-size: 24px; font-weight: bold; margin: 4px 0;">₹ {call_res:,}</div>
+            <span style="color: #8B949E; font-size: 11px;">Max Call OI: {call_oi:,} contracts</span>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with oc_col4:
+        atm_ce = oc_data.get("atm_ce_premium", 0.0)
+        atm_pe = oc_data.get("atm_pe_premium", 0.0)
+        atm_iv = oc_data.get("atm_iv", 0.0)
+        st.markdown(f"""
+        <div style="background: #161B22; border: 1px solid #30363D; border-radius: 8px; padding: 12px; text-align: center;">
+            <div style="color: #00E5FF; font-size: 12px; font-weight: bold;">ATM PREMIUM & IV</div>
+            <div style="color: #ECEFF1; font-size: 18px; font-weight: bold; margin: 4px 0;">CE: ₹{atm_ce:.1f} | PE: ₹{atm_pe:.1f}</div>
+            <span style="color: #8B949E; font-size: 11px;">ATM IV: {atm_iv:.1f}%</span>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # Spot Price Action Confirmation Banner
+    st.markdown(f"""
+    <div style="background: #0D1117; border-left: 4px solid #00E5FF; border: 1px solid #30363D; border-radius: 6px; padding: 10px 14px; margin: 12px 0;">
+        <span style="color: #00E5FF; font-weight: bold;">📍 Spot Price Action Confirmation:</span>
+        <span style="color: #ECEFF1; margin-left: 8px;">{oc_data.get('spot_conf_desc', '')}</span>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Option Chain Strike Ladder Table
+    rows = oc_data.get("chain_rows", [])
+    if rows:
+        table_records = []
+        for r in rows:
+            is_atm_badge = "🎯 ATM" if r.get("is_atm") else ""
+            table_records.append({
+                "Call OI": f"{r['call_oi']:,}",
+                "Call Chg OI": f"{r['call_chng_oi']:,}",
+                "Call Vol": f"{r['call_volume']:,}",
+                "Call LTP": f"₹ {r['call_ltp']:.2f}",
+                "Call IV": f"{r['call_iv']:.1f}%",
+                "Strike": f"{r['strike']} {is_atm_badge}".strip(),
+                "Put LTP": f"₹ {r['put_ltp']:.2f}",
+                "Put IV": f"{r['put_iv']:.1f}%",
+                "Put Vol": f"{r['put_volume']:,}",
+                "Put Chg OI": f"{r['put_chng_oi']:,}",
+                "Put OI": f"{r['put_oi']:,}"
+            })
+        st.dataframe(pd.DataFrame(table_records), use_container_width=True, hide_index=True)
+
+# TAB: INSTITUTIONAL RISK MANAGEMENT GUARD (PILLAR 4)
+with tab_risk_guard:
+    st.subheader("🛡️ Institutional Risk Management & Capital Protection Guard")
+    st.caption("Professional Capital Preservation Rules: Risk per Trade, Daily Trades Limit, 2% Circuit Breaker, Anti-Revenge Lockout.")
+
+    r_guard = st.session_state.order_manager.get_risk_status()
+
+    # Rule Summary Cards
+    rg_col1, rg_col2, rg_col3, rg_col4 = st.columns(4)
+    with rg_col1:
+        st.markdown(f"""
+        <div style="background: #161B22; border: 1px solid #30363D; border-radius: 8px; padding: 12px; text-align: center;">
+            <div style="color: #8B949E; font-size: 12px;">RISK PER TRADE</div>
+            <div style="color: #00E5FF; font-size: 24px; font-weight: bold; margin: 4px 0;">0.5% – 1.0%</div>
+            <span style="color: #8B949E; font-size: 11px;">Max Risk: ₹ {r_guard['risk_per_trade_max_inr']:,.2f}</span>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with rg_col2:
+        t_count = r_guard["daily_trades_count"]
+        t_max = r_guard["daily_max_trades"]
+        t_col = "#00E676" if t_count < t_max else "#FF1744"
+        st.markdown(f"""
+        <div style="background: #161B22; border: 1px solid #30363D; border-radius: 8px; padding: 12px; text-align: center;">
+            <div style="color: #8B949E; font-size: 12px;">DAILY TRADES CAP</div>
+            <div style="color: {t_col}; font-size: 24px; font-weight: bold; margin: 4px 0;">{t_count} / {t_max} Max</div>
+            <span style="color: {t_col}; font-size: 11px; font-weight: bold;">{'ALLOWED' if r_guard['can_trade_daily'] else 'CAP REACHED'}</span>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with rg_col3:
+        pnl_today = r_guard["today_realized_pnl"]
+        pnl_col = "#00E676" if pnl_today >= 0 else ("#FF1744" if r_guard["is_circuit_breaker_tripped"] else "#FFD600")
+        st.markdown(f"""
+        <div style="background: #161B22; border: 1px solid #30363D; border-radius: 8px; padding: 12px; text-align: center;">
+            <div style="color: #8B949E; font-size: 12px;">DAILY LOSS LIMIT (2%)</div>
+            <div style="color: {pnl_col}; font-size: 24px; font-weight: bold; margin: 4px 0;">₹ {pnl_today:,.2f}</div>
+            <span style="color: #8B949E; font-size: 11px;">Circuit Breaker: ₹ {r_guard['daily_loss_limit_inr']:,.2f}</span>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with rg_col4:
+        rev_active = r_guard["revenge_cooldown_active"]
+        rev_col = "#FF1744" if rev_active else "#00E676"
+        rev_text = f"COOLDOWN ({r_guard['cooldown_remaining_min']}m)" if rev_active else "SHIELD ACTIVE"
+        st.markdown(f"""
+        <div style="background: #161B22; border: 1px solid #30363D; border-radius: 8px; padding: 12px; text-align: center;">
+            <div style="color: #8B949E; font-size: 12px;">REVENGE TRADING</div>
+            <div style="color: {rev_col}; font-size: 24px; font-weight: bold; margin: 4px 0;">NEVER</div>
+            <span style="background: rgba(255,255,255,0.08); color: {rev_col}; font-size: 11px; font-weight: bold; padding: 2px 8px; border-radius: 4px;">{rev_text}</span>
+        </div>
+        """, unsafe_allow_html=True)
+
+    st.markdown("---")
+
+    # Risk Management Educational & Discipline Matrix
+    d_col1, d_col2 = st.columns(2)
+    with d_col1:
+        st.markdown("""
+        #### 📌 Golden Rules of Institutional Risk Management
+        1. **Risk per trade (0.5% – 1% Capital)**: Never risk more than 1% of total portfolio on any single trade setup.
+        2. **Setup Invalidation Stop Loss**: Stop loss is placed strictly where the trade idea is invalidated (e.g., breakdown below 5m candle low or Intraday VWAP), never an arbitrary point distance.
+        3. **Risk-to-Reward (Minimum 1:2)**: Only execute trades where Target 1 offers at least 2x the stop loss risk ($Target_1 >= 2 	imes SL$).
+        4. **Daily Trades Cap (1–3 Setups)**: Trade quality over quantity. Overtrading is the #1 destroyer of retail capital.
+        5. **Daily Loss Limit (2% Circuit Breaker)**: If cumulative losses reach 2% of capital in a single session, the system automatically halts all new entries.
+        6. **Revenge Trading (NEVER)**: After a stop loss hit, a 15-minute emotional reset cooldown prevents immediate impulsive re-entries.
+        """)
+    with d_col2:
+        st.markdown("#### 🧮 Dynamic Position Sizing Calculator")
+        calc_capital = st.number_input("Virtual Capital (₹)", value=float(r_guard["current_balance"]), step=5000.0, key="calc_cap")
+        calc_risk_pct = st.slider("Risk per Trade (%)", min_value=0.5, max_value=2.0, value=1.0, step=0.1, key="calc_pct")
+        calc_sl_pts = st.number_input("Stop Loss Distance (Points / ₹)", min_value=1.0, value=25.0, step=1.0, key="calc_sl")
+
+        max_risk_inr = calc_capital * (calc_risk_pct / 100.0)
+        calc_qty = int(max_risk_inr / calc_sl_pts)
+        idx_lot = INDEX_TOKENS.get(selected_symbol, {}).get("lot_size", 65)
+        calc_lots = max(1, calc_qty // idx_lot)
+
+        st.success(f"""
+        **Sizing Output:**
+        - Maximum Allowed Risk: **₹ {max_risk_inr:,.2f}**
+        - Recommended Quantity: **{calc_qty} units**
+        - Recommended Index Lots ({selected_symbol} Lot = {idx_lot}): **{calc_lots} Lot ({calc_lots * idx_lot} Qty)**
+        """)
 
 # TAB 2: PAPER TRADING PERFORMANCE & ORDERS
 with tab_positions:

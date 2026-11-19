@@ -12,7 +12,14 @@ import logging
 
 from angel_connector import AngelOneConnector
 from token_manager import TokenManager
-from config import INDEX_TOKENS, POPULAR_STOCKS
+from config import (
+    INDEX_TOKENS,
+    POPULAR_STOCKS,
+    RISK_PER_TRADE_PERCENT,
+    DAILY_LOSS_LIMIT_PERCENT,
+    DAILY_MAX_TRADES,
+    REVENGE_TRADING_COOLDOWN_MINUTES
+)
 
 logger = logging.getLogger("PaperTradingEngine")
 
@@ -224,6 +231,108 @@ class OrderManager:
             underlying_t2=underlying_t2
         )
 
+
+    def get_risk_status(self) -> Dict[str, Any]:
+        """
+        Pillar 4: Institutional Risk Management & Capital Protection Guard.
+        Evaluates Risk per trade, Daily trade limit (1-3 max),
+        Daily loss limit (2% circuit breaker), and Revenge Trading Lockout.
+        """
+        starting_cap = float(self.wallet.get("starting_capital", DEFAULT_STARTING_CAPITAL))
+        current_balance = float(self.wallet.get("balance", starting_cap))
+        today_str = datetime.date.today().strftime("%Y-%m-%d")
+
+        today_trades = [t for t in self.trades if t.get("timestamp", "").startswith(today_str)]
+        daily_trades_count = len(today_trades)
+        daily_max_trades = DAILY_MAX_TRADES
+        can_trade_daily = daily_trades_count < daily_max_trades
+
+        today_closed = [t for t in today_trades if t.get("status") == "CLOSED"]
+        today_realized_pnl = round(sum(float(t.get("net_pnl", 0.0)) for t in today_closed), 2)
+        daily_loss_limit_inr = round(-DAILY_LOSS_LIMIT_PERCENT * starting_cap, 2)
+        is_circuit_breaker_tripped = (today_realized_pnl <= daily_loss_limit_inr)
+
+        # Revenge Trading Detection:
+        # If any trade hit stop loss or took a loss within the cooldown window
+        revenge_cooldown_active = False
+        cooldown_remaining_sec = 0
+        cooldown_window_sec = REVENGE_TRADING_COOLDOWN_MINUTES * 60
+        now = datetime.datetime.now()
+
+        # Find most recently closed losing trade
+        closed_losing_trades = [
+            t for t in today_closed
+            if t.get("exit_reason") == "STOP_LOSS_HIT" or float(t.get("net_pnl", 0.0)) < 0
+        ]
+        if closed_losing_trades:
+            last_losing = closed_losing_trades[-1]
+            exit_ts_str = last_losing.get("exit_timestamp") or last_losing.get("timestamp")
+            if exit_ts_str:
+                try:
+                    exit_dt = datetime.datetime.strptime(exit_ts_str, "%Y-%m-%d %H:%M:%S")
+                    elapsed_sec = (now - exit_dt).total_seconds()
+                    if 0 <= elapsed_sec < cooldown_window_sec:
+                        revenge_cooldown_active = True
+                        cooldown_remaining_sec = int(cooldown_window_sec - elapsed_sec)
+                except Exception as e:
+                    logger.debug(f"Error parsing exit timestamp: {e}")
+
+        # Position sizing max risk
+        risk_per_trade_max_inr = round(current_balance * RISK_PER_TRADE_PERCENT, 2)
+
+        return {
+            "starting_capital": starting_cap,
+            "current_balance": current_balance,
+            "daily_trades_count": daily_trades_count,
+            "daily_max_trades": daily_max_trades,
+            "can_trade_daily": can_trade_daily,
+            "today_realized_pnl": today_realized_pnl,
+            "daily_loss_limit_inr": daily_loss_limit_inr,
+            "daily_loss_limit_percent": DAILY_LOSS_LIMIT_PERCENT * 100,
+            "is_circuit_breaker_tripped": is_circuit_breaker_tripped,
+            "revenge_cooldown_active": revenge_cooldown_active,
+            "cooldown_remaining_sec": cooldown_remaining_sec,
+            "cooldown_remaining_min": max(1, (cooldown_remaining_sec // 60) + 1) if revenge_cooldown_active else 0,
+            "risk_per_trade_max_inr": risk_per_trade_max_inr,
+            "risk_per_trade_percent": RISK_PER_TRADE_PERCENT * 100
+        }
+
+    def validate_risk_limits(
+        self,
+        symbol: str,
+        entry_price: float,
+        sl_price: float,
+        total_qty: int
+    ) -> Tuple[bool, str]:
+        """Validates all 4 risk management rules before permitting trade entry."""
+        status = self.get_risk_status()
+
+        # 1. Daily Loss Limit (2% Circuit Breaker)
+        if status["is_circuit_breaker_tripped"]:
+            return False, (
+                f"🚨 Daily Loss Limit Hit: Today's net P&L is -₹{abs(status['today_realized_pnl']):,.2f} "
+                f"(exceeds 2.0% daily capital limit of -₹{abs(status['daily_loss_limit_inr']):,.2f}). "
+                f"Trading halted for today to protect capital."
+            )
+
+        # 2. Daily Trade Limit (1-3 Quality Setups Max)
+        if not status["can_trade_daily"]:
+            return False, (
+                f"🛑 Daily Trade Limit Reached: {status['daily_trades_count']}/{status['daily_max_trades']} "
+                f"quality setups executed today. Overtrading prevention halts new entries for today."
+            )
+
+        # 3. Revenge Trading Protection (Never)
+        if status["revenge_cooldown_active"]:
+            rem_m = status["cooldown_remaining_min"]
+            return False, (
+                f"⏳ Revenge Trading Protection Active: Stop loss was hit recently. "
+                f"15-minute emotional reset cooldown in effect ({rem_m} min remaining). "
+                f"Rule: NEVER revenge trade. Wait for a completely fresh confirmed setup."
+            )
+
+        return True, "Risk management checks passed successfully."
+
     def _create_paper_trade(
         self,
         symbol: str,
@@ -243,6 +352,14 @@ class OrderManager:
         underlying_t2: float = 0.0
     ) -> Dict[str, Any]:
         """Internal helper to validate balance and open persistent trade record."""
+        # Validate Institutional Risk Management Guard (Pillar 4)
+        can_exec, risk_msg = self.validate_risk_limits(symbol, entry_price, sl_price, total_qty)
+        if not can_exec:
+            return {
+                "status": False,
+                "message": risk_msg,
+                "code": "RISK_LIMIT_VIOLATION"
+            }
         turnover = entry_price * total_qty
         charges = self.calculate_trade_charges(turnover, is_option=is_opt)
 
@@ -509,6 +626,7 @@ class OrderManager:
                 t["status"] = "CLOSED"
                 t["exit_price"] = round(exit_price, 2)
                 t["exit_time"] = datetime.datetime.now().strftime("%d-%b-%Y %H:%M:%S IST")
+                t["exit_timestamp"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 t["exit_reason"] = exit_reason
 
                 qty = t["quantity"]
