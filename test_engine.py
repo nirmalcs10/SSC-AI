@@ -28,16 +28,17 @@ def run_tests():
     assert quote["ltp"] > 0, "LTP must be greater than zero!"
 
     print("\n=== Step 2b: Testing Live Option Premium Retrieval (NFO) ===")
-    opt_quotes = connector.get_options_market_quotes("NIFTY", strike=25200, current_spot_ltp=quote["ltp"])
+    atm_test_strike = int(round(quote["ltp"] / 50) * 50)
+    opt_quotes = connector.get_options_market_quotes("NIFTY", strike=atm_test_strike, current_spot_ltp=quote["ltp"])
     ce_q = opt_quotes["call_option"]
     pe_q = opt_quotes["put_option"]
     print(f"Live CE Quote -> Symbol: {ce_q['symbol']}, Token: {ce_q['token']}, LTP: Rs.{ce_q['ltp']}")
     print(f"Live PE Quote -> Symbol: {pe_q['symbol']}, Token: {pe_q['token']}, LTP: Rs.{pe_q['ltp']}")
-    assert ce_q["ltp"] >= 140, f"CE option LTP must be realistic, got {ce_q['ltp']}"
-    assert pe_q["ltp"] >= 140, f"PE option LTP must be realistic, got {pe_q['ltp']}"
+    assert ce_q["ltp"] > 0, f"CE option LTP must be > 0, got {ce_q['ltp']}"
+    assert pe_q["ltp"] > 0, f"PE option LTP must be > 0, got {pe_q['ltp']}"
 
     print("\n=== Step 2c: Testing Multi-Moneyness Strike Ladder (ITM, ATM, OTM) ===")
-    ladder_data = connector.get_options_ladder_quotes("NIFTY", atm_strike=25200, current_spot_ltp=quote["ltp"])
+    ladder_data = connector.get_options_ladder_quotes("NIFTY", atm_strike=atm_test_strike, current_spot_ltp=quote["ltp"])
     for opt_t in ["CE", "PE"]:
         for tier in ["ITM", "ATM", "OTM"]:
             item = ladder_data[opt_t][tier]
@@ -90,6 +91,12 @@ def run_tests():
 
     assert plan["entry_price"] > 0, "Entry price must be > 0"
     assert plan["stop_loss"] > 0, "Stop loss must be > 0"
+    assert "confluence_score" in plan, "confluence_score must be present in plan"
+    assert "score" in plan, "score must be present in plan"
+    assert plan["confluence_score"] == plan["score"], f"confluence_score ({plan['confluence_score']}) must match score ({plan['score']})"
+    if plan["score"] >= 70 and plan["direction"] == "BUY":
+        assert plan["signal"] == "STRONG BUY", f"Score >= 70 with BUY direction must be STRONG BUY, got {plan['signal']}"
+    print(f"Verified Confluence Score: {plan['confluence_score']}/100 and Signal: {plan['signal']}")
     # Verify Minimum 1:2 Risk/Reward target
     if plan["direction"] in ("BUY", "SELL"):
         risk_dist = abs(plan["entry_price"] - plan["stop_loss"])

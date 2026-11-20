@@ -109,7 +109,7 @@ def render_tradingview_confluence_chart(
     if trade_plan:
         direction = trade_plan.get("direction", "NEUTRAL")
         signal = trade_plan.get("signal", "WAIT")
-        score = trade_plan.get("confluence_score", 0)
+        score = trade_plan.get("confluence_score", trade_plan.get("score", 0))
         rrr_text = trade_plan.get("risk_reward_ratio", "1:2")
 
         if direction == "BUY":

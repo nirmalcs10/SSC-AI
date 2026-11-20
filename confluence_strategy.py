@@ -65,6 +65,8 @@ class ConfluenceStrategy:
             return {
                 "signal": "NO DATA",
                 "symbol": self.symbol,
+                "score": 0,
+                "confluence_score": 0,
                 "message": "No candle data available for analysis"
             }
 
@@ -482,8 +484,8 @@ class ConfluenceStrategy:
         )
 
         # Determine Signal Classification & Natural Language Explanation
-        if bullish_setup_confirmed and score >= 45:
-            if score >= CONFLUENCE_BUY_THRESHOLD and (daily_trend_bullish or oc_bullish_support):
+        if bullish_setup_confirmed and score >= 40:
+            if score >= CONFLUENCE_BUY_THRESHOLD:
                 signal = "STRONG BUY"
             else:
                 signal = "BUY"
@@ -494,8 +496,8 @@ class ConfluenceStrategy:
                 f"RSI-14 is > 50 ({struct_rsi:.1f}), and 3m/5m action shows bullish candle & volume expansion. "
                 f"Spot is protected by Put Writing Support. 1:2+ RR long setup confirmed."
             )
-        elif bearish_setup_confirmed and score <= -45:
-            if score <= CONFLUENCE_SELL_THRESHOLD and (daily_trend_bearish or oc_bearish_resistance):
+        elif bearish_setup_confirmed and score <= -40:
+            if score <= CONFLUENCE_SELL_THRESHOLD:
                 signal = "STRONG SELL"
             else:
                 signal = "SELL"
@@ -598,6 +600,7 @@ class ConfluenceStrategy:
             "signal": signal,
             "direction": direction,
             "score": score,
+            "confluence_score": score,
             "current_price": current_price,
             "entry_price": entry_price,
             "stop_loss": stop_loss,

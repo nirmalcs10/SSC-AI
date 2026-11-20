@@ -261,13 +261,16 @@ if plan:
     card_class = "buy-card" if direction == "BUY" else ("sell-card" if direction == "SELL" else "wait-card")
     icon = "🚀" if direction == "BUY" else ("🔻" if direction == "SELL" else "⏳")
 
+    opt_suffix = " • CALL (CE)" if direction == "BUY" else (" • PUT (PE)" if direction == "SELL" else "")
+    c_score_display = plan.get("confluence_score", plan.get("score", 0))
+
     sig_c1, sig_c2 = st.columns([3.2, 1.2])
     with sig_c1:
         st.markdown(f"""
         <div class="trade-card {card_class}">
             <div style="display: flex; justify-content: space-between; align-items: center;">
-                <h2 style="margin: 0;">{icon} Signal: {signal} ({direction})</h2>
-                <h3 style="margin: 0; color: #FFD600;">Confluence Score: {plan.get('confluence_score', 0)} / 100</h3>
+                <h2 style="margin: 0;">{icon} Signal: {signal}{opt_suffix}</h2>
+                <h3 style="margin: 0; color: #FFD600;">Confluence Score: {c_score_display} / 100</h3>
             </div>
         </div>
         """, unsafe_allow_html=True)
@@ -306,7 +309,7 @@ if plan:
     if st.session_state.get("show_why_signal", False):
         dec_summary = plan.get("decision_summary", "")
         rationale = plan.get("detailed_rationale", {})
-        c_score = plan.get("confluence_score", 0)
+        c_score = plan.get("confluence_score", plan.get("score", 0))
         c_color = "#00E676" if direction == "BUY" else ("#FF1744" if direction == "SELL" else "#FFD600")
 
         st.markdown(f"""
