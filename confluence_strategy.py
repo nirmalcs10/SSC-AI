@@ -483,40 +483,40 @@ class ConfluenceStrategy:
             (m3_candle_bearish or of_ratio <= 40.0)
         )
 
-        # Determine Signal Classification & Natural Language Explanation
+        # Determine Signal Classification & Natural Language Explanation (Option Buying Only: Buy CE / Buy PE)
         if bullish_setup_confirmed and score >= 40:
             if score >= CONFLUENCE_BUY_THRESHOLD:
-                signal = "STRONG BUY"
+                signal = "STRONG BUY CALL (CE)"
             else:
-                signal = "BUY"
+                signal = "BUY CALL (CE)"
             direction = "BUY"
             decision_summary = (
                 f"🟢 {signal} DECISION (Score: {score}/100): "
-                f"Full 4-indicator confluence confirmed! Price is above Intraday VWAP, 9 EMA is above 21 EMA, "
-                f"RSI-14 is > 50 ({struct_rsi:.1f}), and 3m/5m action shows bullish candle & volume expansion. "
-                f"Spot is protected by Put Writing Support. 1:2+ RR long setup confirmed."
+                f"Full 4-indicator bullish momentum confirmed for Call Option Buying! Price is above Intraday VWAP, "
+                f"9 EMA is above 21 EMA, RSI-14 is > 50 ({struct_rsi:.1f}), and 3m/5m action shows bullish candle & volume expansion. "
+                f"Spot is protected by Put Writing Support. 1:2+ RR Call Buy setup confirmed."
             )
         elif bearish_setup_confirmed and score <= -40:
             if score <= CONFLUENCE_SELL_THRESHOLD:
-                signal = "STRONG SELL"
+                signal = "STRONG BUY PUT (PE)"
             else:
-                signal = "SELL"
+                signal = "BUY PUT (PE)"
             direction = "SELL"
             decision_summary = (
                 f"🔴 {signal} DECISION (Score: {score}/100): "
-                f"Full 4-indicator confluence confirmed! Price is below Intraday VWAP, 9 EMA is below 21 EMA, "
-                f"RSI-14 is < 50 ({struct_rsi:.1f}), and 3m/5m action shows bearish breakdown with volume. "
-                f"Capped below Call Writing Resistance. 1:2+ RR short setup confirmed."
+                f"Full 4-indicator bearish breakdown confirmed for Put Option Buying! Price is below Intraday VWAP, "
+                f"9 EMA is below 21 EMA, RSI-14 is < 50 ({struct_rsi:.1f}), and 3m/5m action shows bearish momentum with volume. "
+                f"Capped below Call Writing Resistance. 1:2+ RR Put Buy setup confirmed."
             )
         else:
             signal = "WAIT / NO TRADE"
             direction = "NEUTRAL"
-            reasons.append("Multi-indicator confluence incomplete. Never enter based on one indicator alone.")
+            reasons.append("Option Buying confluence incomplete. Avoid sideways choppy markets to prevent Theta decay.")
             decision_summary = (
                 f"⏳ WAIT / NO TRADE DECISION (Score: {score}/100): "
-                f"The algorithm detected incomplete indicator confluence or timeframe disagreement. "
-                f"Golden Rule: 'Never enter based on one indicator alone.' "
-                f"Wait for Price vs VWAP, 9/21 EMA crossover, RSI momentum, and 3m/5m volume to align before risking capital."
+                f"Option Buyers lose capital to Theta (time decay) in choppy or low-volume markets. "
+                f"Golden Rule: 'Never buy options based on one indicator alone.' "
+                f"Wait for Price vs VWAP, 9/21 EMA crossover, RSI momentum, and 3m/5m volume breakout to align before buying CE or PE."
             )
 
         # -------------------------------------------------------------

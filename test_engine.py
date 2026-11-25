@@ -95,7 +95,9 @@ def run_tests():
     assert "score" in plan, "score must be present in plan"
     assert plan["confluence_score"] == plan["score"], f"confluence_score ({plan['confluence_score']}) must match score ({plan['score']})"
     if plan["score"] >= 70 and plan["direction"] == "BUY":
-        assert plan["signal"] == "STRONG BUY", f"Score >= 70 with BUY direction must be STRONG BUY, got {plan['signal']}"
+        assert plan["signal"] == "STRONG BUY CALL (CE)", f"Score >= 70 with BUY direction must be STRONG BUY CALL (CE), got {plan['signal']}"
+    if plan["score"] <= -70 and plan["direction"] == "SELL":
+        assert plan["signal"] == "STRONG BUY PUT (PE)", f"Score <= -70 with SELL direction must be STRONG BUY PUT (PE), got {plan['signal']}"
     print(f"Verified Confluence Score: {plan['confluence_score']}/100 and Signal: {plan['signal']}")
     # Verify Minimum 1:2 Risk/Reward target
     if plan["direction"] in ("BUY", "SELL"):

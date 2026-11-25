@@ -123,21 +123,17 @@ if "current_mode" not in st.session_state:
 st.sidebar.title("🇮🇳 Indian Market Tool")
 st.sidebar.caption("Angel One SmartAPI • Multi-Timeframe Engine")
 
-# Trading Mode Selection
+# Trading Mode Selection (Option Buying Only)
 mode = st.sidebar.selectbox(
-    "Trading Mode",
-    ["Indices F&O (Options/Futures)", "Intraday Equity & Index", "Swing Trading"],
+    "Trading Mode (Option Buying Only)",
+    ["Index Option Buying (Intraday 5m/15m)", "Index Option Scalping (3m/5m)"],
     index=0
 )
-mode_code = "FNO_INDICES" if "F&O" in mode else ("SWING" if "Swing" in mode else "INTRADAY")
+mode_code = "OPTION_SCALP" if "Scalp" in mode else "OPTION_BUY"
 
-# Symbol Selection
-if "F&O" in mode:
-    symbol_options = list(INDEX_TOKENS.keys())
-else:
-    symbol_options = list(INDEX_TOKENS.keys()) + list(POPULAR_STOCKS.keys())
-
-selected_symbol = st.sidebar.selectbox("Select Symbol / Index", symbol_options, index=0)
+# Symbol Selection (Index Options Only)
+symbol_options = list(INDEX_TOKENS.keys())
+selected_symbol = st.sidebar.selectbox("Select Index (Option Buying)", symbol_options, index=0)
 
 # Chart Overlays Toggles
 st.sidebar.subheader("Chart Drawing Overlays")
@@ -261,7 +257,9 @@ if plan:
     card_class = "buy-card" if direction == "BUY" else ("sell-card" if direction == "SELL" else "wait-card")
     icon = "🚀" if direction == "BUY" else ("🔻" if direction == "SELL" else "⏳")
 
-    opt_suffix = " • CALL (CE)" if direction == "BUY" else (" • PUT (PE)" if direction == "SELL" else "")
+    opt_suffix = ""
+    if "CALL" not in signal and "PUT" not in signal:
+        opt_suffix = " • CALL (CE)" if direction == "BUY" else (" • PUT (PE)" if direction == "SELL" else "")
     c_score_display = plan.get("confluence_score", plan.get("score", 0))
 
     sig_c1, sig_c2 = st.columns([3.2, 1.2])
@@ -800,10 +798,10 @@ def render_live_fno_and_execution_fragment(sym: str, mode_str: str, plan_dict: d
                     })
                 st.dataframe(pd.DataFrame(pe_rows), use_container_width=True, hide_index=True)
 
-    # 5. 1-Click Virtual Paper Trade Execution Panel (Available on ALL INDICES & EQUITIES)
+    # 5. 1-Click Option Buying Execution Panel (Index Options CE / PE Only)
     st.markdown("""<div class="execution-box">""", unsafe_allow_html=True)
-    st.markdown("<span style='color: #00E5FF; font-weight: bold; font-size: 16px;'>📝 1-Click Virtual Paper Trade Execution (Zero Real Money Risk)</span>", unsafe_allow_html=True)
-    st.caption("Active on ALL INDICES (NIFTY, BANKNIFTY, FINNIFTY, MIDCPNIFTY) & Equities • Real-time simulated execution with automatic SL/Target triggers.")
+    st.markdown("<span style='color: #00E5FF; font-weight: bold; font-size: 16px;'>📝 1-Click Option Buying Execution (Zero Real Money Risk)</span>", unsafe_allow_html=True)
+    st.caption("Exclusively for Index Option Buyers (BUY CALL CE / BUY PUT PE) • Automatic Option Premium SL & Target Triggers.")
 
     exec_col1, exec_col2, exec_col3 = st.columns([1.2, 1.2, 1.8])
     plan_dir = plan_dict.get("direction", "BUY") if plan_dict else "BUY"
@@ -811,13 +809,13 @@ def render_live_fno_and_execution_fragment(sym: str, mode_str: str, plan_dict: d
 
     with exec_col1:
         trade_side_label = st.radio(
-            "Trade Direction:",
-            ["BUY (Call / Long)", "SELL (Put / Short)"],
+            "Option Buy Side:",
+            ["🟢 BUY CALL (CE) — Bullish", "🔴 BUY PUT (PE) — Bearish"],
             index=default_dir_idx,
             horizontal=True,
             key=f"side_{sym}"
         )
-        exec_direction = "BUY" if "BUY" in trade_side_label else "SELL"
+        exec_direction = "BUY" if "CALL (CE)" in trade_side_label else "SELL"
 
         if is_idx:
             exec_tier_label = st.radio(
@@ -852,20 +850,6 @@ def render_live_fno_and_execution_fragment(sym: str, mode_str: str, plan_dict: d
                 u_t2 = float(plan_dict.get("target_2") or round(live_ltp * 0.992, 2))
 
             invested_amount = round(total_contracts * exec_entry_p, 2)
-        else:
-            trade_shares = st.number_input("Shares Quantity", min_value=1, max_value=5000, value=10, step=1, key=f"shares_{sym}")
-            total_contracts = int(trade_shares)
-            trade_lots = total_contracts
-            exec_trading_sym = f"{sym}-EQ"
-            exec_entry_p = live_ltp
-            exec_sl_p = round(exec_entry_p * (0.98 if exec_direction == "BUY" else 1.02), 2)
-            exec_t1_p = round(exec_entry_p * (1.02 if exec_direction == "BUY" else 0.98), 2)
-            exec_t2_p = round(exec_entry_p * (1.04 if exec_direction == "BUY" else 0.96), 2)
-            invested_amount = round(total_contracts * exec_entry_p, 2)
-            u_entry = float(live_ltp)
-            u_sl = exec_sl_p
-            u_t1 = exec_t1_p
-            u_t2 = exec_t2_p
 
     with exec_col3:
         st.write("")
@@ -889,16 +873,17 @@ def render_live_fno_and_execution_fragment(sym: str, mode_str: str, plan_dict: d
             block_reason = f"⏳ Revenge Trading Protection Active ({risk_guard['cooldown_remaining_min']}m cooldown remaining). Never revenge trade."
             st.warning(block_reason)
 
-        btn_text = f"🚀 Execute 1-Click {exec_direction} ({trade_lots} Lot = {total_contracts} Qty)" if is_idx else f"🚀 Execute 1-Click {exec_direction} ({total_contracts} Shares)"
+        exec_opt_label = "BUY CALL (CE)" if exec_direction == "BUY" else "BUY PUT (PE)"
+        btn_text = f"🚀 Execute 1-Click {exec_opt_label} ({trade_lots} Lot = {total_contracts} Qty)"
         if is_blocked:
             btn_text = f"🔒 Trade Execution Blocked: {block_reason[:38]}..."
             st.button(btn_text, disabled=True, use_container_width=True, key=f"btn_exec_{sym}")
         elif st.button(btn_text, type="primary", use_container_width=True, key=f"btn_exec_{sym}"):
-            with st.spinner("Executing virtual paper trade..."):
+            with st.spinner("Executing virtual option buy order..."):
                 exec_res = ord_mgr.execute_custom_trade(
                     symbol=sym,
                     direction=exec_direction,
-                    trade_type="Options " + ("CE" if exec_direction == "BUY" else "PE") if is_idx else "Equity Intraday",
+                    trade_type="Options " + ("CE" if exec_direction == "BUY" else "PE"),
                     quantity_lots=int(trade_lots),
                     entry_price=exec_entry_p,
                     sl_price=exec_sl_p,
@@ -930,11 +915,12 @@ def render_live_fno_and_execution_fragment(sym: str, mode_str: str, plan_dict: d
             b_text = f"PROFIT: {p_sign}₹ {net_pnl:,.2f} ({p_sign}{t.get('return_pct', 0.0)}%)" if is_prof else f"LOSS: -₹ {abs(net_pnl):,.2f} ({t.get('return_pct', 0.0)}%)"
 
             col_pos1, col_pos2 = st.columns([3, 1])
+            pos_action = "BUY CE" if (t.get("direction") == "BUY" or "CE" in t.get("trading_symbol", "")) else "BUY PE"
             with col_pos1:
                 st.markdown(f"""
                 <div style="background-color: #161B22; border: 1px solid #30363D; border-radius: 8px; padding: 12px 16px; margin-bottom: 8px;">
                     <div style="display: flex; justify-content: space-between; align-items: center;">
-                        <span style="font-weight: bold; color: #ECEFF1; font-size: 15px;">{t['trading_symbol']} ({t['direction']}) • Qty: {t['quantity']}</span>
+                        <span style="font-weight: bold; color: #ECEFF1; font-size: 15px;">{t['trading_symbol']} ({pos_action}) • Qty: {t['quantity']}</span>
                         <span style="background: {b_bg}; border: 1px solid {b_col}; color: {b_col}; padding: 3px 10px; border-radius: 4px; font-weight: bold; font-size: 13px;">
                             {b_text}
                         </span>
