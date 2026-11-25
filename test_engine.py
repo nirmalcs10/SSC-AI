@@ -59,8 +59,8 @@ def run_tests():
     assert oc_data["call_resistance_strike"] > 0, "Call Resistance strike must exist"
     assert len(oc_data["chain_rows"]) >= 5, "At least 5 strikes must be present in ladder"
 
-    print("\n=== Step 3: Testing 5 Chart Timeframes (Pillar 1) ===")
-    timeframes = ("3m", "5m", "15m", "30m", "1D")
+    print("\n=== Step 3: Testing 4 Intraday Chart Timeframes (1m, 3m, 5m, 15m) ===")
+    timeframes = ("1m", "3m", "5m", "15m")
     mtf_data = connector.get_multi_timeframe_data("NIFTY", timeframes=timeframes)
     for tf in timeframes:
         assert tf in mtf_data, f"Timeframe {tf} must be fetched"

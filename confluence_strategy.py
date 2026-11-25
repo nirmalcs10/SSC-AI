@@ -1,12 +1,11 @@
 """
 Multi-Timeframe Confluence Strategy Engine.
 Implements the 4-Pillar Architecture:
-1. 5 Chart Timeframes:
-   - Daily (1D): Major trend and support/resistance
-   - 30-minute (30m): Market direction
-   - 15-minute (15m): Trend confirmation
-   - 5-minute (5m): Entry setup
-   - 3-minute (3m): Entry confirmation
+1. Intraday Timeframes Only (1m, 3m, 5m, 15m):
+   - 15-minute (15m): Intraday trend & support/resistance
+   - 5-minute (5m): Entry setup (VWAP, 9/21 EMA)
+   - 3-minute (3m): Momentum & volume confirmation
+   - 1-minute (1m): Precision scalp entry trigger
 2. Streamlined Technical Indicators & Strict Confluence Rules:
    - EMA-9 (Short-term trend)
    - EMA-21 (Trend confirmation)
@@ -52,7 +51,7 @@ class ConfluenceStrategy:
         option_chain: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
-        Full Top-Down Analysis across 5 timeframes (Daily, 30m, 15m, 5m, 3m).
+        Intraday Top-Down Analysis across 4 timeframes (15m, 5m, 3m, 1m).
         Returns trade recommendation with Entry, Setup Invalidation SL, 1:2+ Targets, and Rationale.
         """
         # Ensure indicators and levels are computed
@@ -70,27 +69,25 @@ class ConfluenceStrategy:
                 "message": "No candle data available for analysis"
             }
 
-        # Pillar 1: Timeframe Mapping
-        # Daily: Major trend and support/resistance
-        # 30-minute: Market direction
-        # 15-minute: Trend confirmation
-        # 5-minute: Entry setup
-        # 3-minute: Entry confirmation
-        df_daily = analyzed_tf.get("1D") if analyzed_tf.get("1D") is not None else analyzed_tf.get("1h")
-        df_30m = analyzed_tf.get("30m") if analyzed_tf.get("30m") is not None else (analyzed_tf.get("1h") if analyzed_tf.get("1h") is not None else analyzed_tf.get("15m"))
+        # Pillar 1: Intraday-Only Timeframe Mapping (1m, 3m, 5m, 15m)
+        # 15-minute: Intraday trend, Supertrend & S/R levels
+        # 5-minute: Primary entry setup (VWAP, 9/21 EMA)
+        # 3-minute: Momentum & volume confirmation
+        # 1-minute: Precision scalp entry trigger
         df_15m = analyzed_tf.get("15m") if analyzed_tf.get("15m") is not None else analyzed_tf.get("5m")
         df_5m = analyzed_tf.get("5m") if analyzed_tf.get("5m") is not None else analyzed_tf.get("15m")
-        df_3m = analyzed_tf.get("3m") if analyzed_tf.get("3m") is not None else (analyzed_tf.get("1m") if analyzed_tf.get("1m") is not None else df_5m)
+        df_3m = analyzed_tf.get("3m") if analyzed_tf.get("3m") is not None else analyzed_tf.get("5m")
+        df_1m = analyzed_tf.get("1m") if analyzed_tf.get("1m") is not None else df_3m
 
         # Reference dataframe for current spot price
-        ref_df = df_3m if (df_3m is not None and not df_3m.empty) else df_5m
+        ref_df = df_1m if (df_1m is not None and not df_1m.empty) else (df_3m if (df_3m is not None and not df_3m.empty) else df_5m)
         current_candle = ref_df.iloc[-1]
         current_price = float(current_candle["close"])
 
-        # Detect S/R, CPR, and Key levels from Daily and 30m
-        cpr_data = LevelDetector.calculate_cpr_and_pivots(df_daily if df_daily is not None else df_30m)
-        pdh_pdl = LevelDetector.get_pdh_pdl_open(df_15m if df_15m is not None else df_30m)
-        sr_zones = LevelDetector.detect_support_resistance_zones(df_30m if df_30m is not None else df_15m)
+        # Detect S/R, CPR, and Key levels from 15m intraday session history
+        cpr_data = LevelDetector.calculate_cpr_and_pivots(df_15m if df_15m is not None else df_5m)
+        pdh_pdl = LevelDetector.get_pdh_pdl_open(df_15m if df_15m is not None else df_5m)
+        sr_zones = LevelDetector.detect_support_resistance_zones(df_15m if df_15m is not None else df_5m)
         fvgs = LevelDetector.detect_fair_value_gaps(df_5m if df_5m is not None else df_15m)
         obs = LevelDetector.detect_order_blocks(df_5m if df_5m is not None else df_15m)
 
@@ -110,79 +107,55 @@ class ConfluenceStrategy:
         }
 
         # -------------------------------------------------------------
-        # 1. Daily (1D): Major Trend & Support/Resistance
+        # 1. 15-Minute (15m): Intraday Macro Trend & Supertrend Direction
         # -------------------------------------------------------------
-        daily_trend_bullish = False
-        daily_trend_bearish = False
-        if df_daily is not None and len(df_daily) >= 10:
-            daily_close = float(df_daily["close"].iloc[-1])
-            daily_ema50 = float(df_daily["ema_50"].iloc[-1])
-            daily_ema200 = float(df_daily["ema_200"].iloc[-1])
+        if df_15m is not None and len(df_15m) >= 10:
+            m15_close = float(df_15m["close"].iloc[-1])
+            m15_ema50 = float(df_15m["ema_50"].iloc[-1])
+            m15_ema200 = float(df_15m["ema_200"].iloc[-1])
+            m15_st_dir = int(df_15m["supertrend_dir"].iloc[-1])
 
-            if daily_close > daily_ema50 and daily_close > daily_ema200:
+            if m15_close > m15_ema50 and m15_st_dir == 1:
                 score += 15
-                daily_trend_bullish = True
-                reasons.append("Daily (1D): Major Bullish Trend (Trading above 50 & 200 EMA)")
+                reasons.append("15-min: Intraday Trend Bullish (Above 50 EMA & Green Supertrend)")
                 detailed_rationale["macro"].append({
-                    "factor": "Daily (1D) Major Trend (50 & 200 EMA)",
+                    "factor": "15-Minute Intraday Direction (50 EMA & Supertrend)",
                     "status": "BULLISH",
-                    "detail": f"Price ₹{daily_close:,.2f} is above Daily 50 EMA (₹{daily_ema50:,.2f}) and 200 EMA (₹{daily_ema200:,.2f})",
+                    "detail": f"15m Close ₹{m15_close:,.2f} above 50 EMA (₹{m15_ema50:,.2f}) with Bullish Supertrend",
                     "points": 15
                 })
-            elif daily_close < daily_ema50 and daily_close < daily_ema200:
+            elif m15_close < m15_ema50 and m15_st_dir == -1:
                 score -= 15
-                daily_trend_bearish = True
-                reasons.append("Daily (1D): Major Bearish Trend (Trading below 50 & 200 EMA)")
+                reasons.append("15-min: Intraday Trend Bearish (Below 50 EMA & Red Supertrend)")
                 detailed_rationale["macro"].append({
-                    "factor": "Daily (1D) Major Trend (50 & 200 EMA)",
+                    "factor": "15-Minute Intraday Direction (50 EMA & Supertrend)",
                     "status": "BEARISH",
-                    "detail": f"Price ₹{daily_close:,.2f} is below Daily 50 EMA (₹{daily_ema50:,.2f}) and 200 EMA (₹{daily_ema200:,.2f})",
+                    "detail": f"15m Close ₹{m15_close:,.2f} below 50 EMA (₹{m15_ema50:,.2f}) with Bearish Supertrend",
                     "points": -15
                 })
             else:
                 detailed_rationale["macro"].append({
-                    "factor": "Daily (1D) Major Trend (50 & 200 EMA)",
+                    "factor": "15-Minute Intraday Direction (50 EMA & Supertrend)",
                     "status": "NEUTRAL",
-                    "detail": f"Price ₹{daily_close:,.2f} is consolidating between 50 EMA (₹{daily_ema50:,.2f}) & 200 EMA (₹{daily_ema200:,.2f})",
+                    "detail": f"15m price action consolidating near 50 EMA (₹{m15_ema50:,.2f})",
                     "points": 0
                 })
 
-        # -------------------------------------------------------------
-        # 2. 30-Minute (30m): Market Direction
-        # -------------------------------------------------------------
-        m30_direction_bullish = False
-        m30_direction_bearish = False
-        if df_30m is not None and len(df_30m) >= 10:
-            m30_close = float(df_30m["close"].iloc[-1])
-            m30_ema50 = float(df_30m["ema_50"].iloc[-1])
-            m30_st_dir = int(df_30m["supertrend_dir"].iloc[-1])
-
-            if m30_close > m30_ema50 and m30_st_dir == 1:
-                score += 15
-                m30_direction_bullish = True
-                reasons.append("30-min: Market Direction Bullish (Above 50 EMA & Green Supertrend)")
+            if m15_close > m15_ema200:
+                score += 10
                 detailed_rationale["macro"].append({
-                    "factor": "30-Minute Market Direction",
+                    "factor": "15-Minute Baseline Trend (200 EMA)",
                     "status": "BULLISH",
-                    "detail": f"30m Close ₹{m30_close:,.2f} above 50 EMA (₹{m30_ema50:,.2f}) with Bullish Supertrend",
-                    "points": 15
-                })
-            elif m30_close < m30_ema50 and m30_st_dir == -1:
-                score -= 15
-                m30_direction_bearish = True
-                reasons.append("30-min: Market Direction Bearish (Below 50 EMA & Red Supertrend)")
-                detailed_rationale["macro"].append({
-                    "factor": "30-Minute Market Direction",
-                    "status": "BEARISH",
-                    "detail": f"30m Close ₹{m30_close:,.2f} below 50 EMA (₹{m30_ema50:,.2f}) with Bearish Supertrend",
-                    "points": -15
+                    "detail": f"15m Close ₹{m15_close:,.2f} is above 200 EMA (₹{m15_ema200:,.2f})",
+                    "points": 10
                 })
             else:
+                score -= 10
                 detailed_rationale["macro"].append({
-                    "factor": "30-Minute Market Direction",
-                    "status": "NEUTRAL",
-                    "detail": f"30m price action showing mixed directional cues at ₹{m30_close:,.2f}",
-                    "points": 0
+                    "factor": "15-Minute Baseline Trend (200 EMA)",
+                    "status": "BEARISH",
+                    "detail": f"15m Close ₹{m15_close:,.2f} is below 200 EMA (₹{m15_ema200:,.2f})",
+                    "points": -10
                 })
 
         # -------------------------------------------------------------
@@ -337,6 +310,41 @@ class ConfluenceStrategy:
                     "factor": "3-Minute Entry Confirmation",
                     "status": "NEUTRAL",
                     "detail": f"Candle body or volume ({c_vol:,.0f} vs avg {c_vol_ma:,.0f}) lacks decisive breakout momentum",
+                    "points": 0
+                })
+
+        # -------------------------------------------------------------
+        # 5b. 1-Minute (1m): Precision Scalp Trigger
+        # -------------------------------------------------------------
+        if df_1m is not None and len(df_1m) >= 10:
+            m1_ema9 = float(df_1m["ema_9"].iloc[-1])
+            m1_ema21 = float(df_1m["ema_21"].iloc[-1])
+            m1_open = float(df_1m["open"].iloc[-1])
+            m1_close = float(df_1m["close"].iloc[-1])
+
+            if m1_ema9 > m1_ema21 and m1_close > m1_open:
+                score += 10
+                reasons.append("1-min: Bullish Scalp Trigger (9 EMA > 21 EMA & Green Candle)")
+                detailed_rationale["execution"].append({
+                    "factor": "1-Minute Scalp Entry Trigger",
+                    "status": "BULLISH",
+                    "detail": f"1m 9 EMA (₹{m1_ema9:,.2f}) > 21 EMA (₹{m1_ema21:,.2f}) with active Green trigger candle",
+                    "points": 10
+                })
+            elif m1_ema9 < m1_ema21 and m1_close < m1_open:
+                score -= 10
+                reasons.append("1-min: Bearish Scalp Trigger (9 EMA < 21 EMA & Red Candle)")
+                detailed_rationale["execution"].append({
+                    "factor": "1-Minute Scalp Entry Trigger",
+                    "status": "BEARISH",
+                    "detail": f"1m 9 EMA (₹{m1_ema9:,.2f}) < 21 EMA (₹{m1_ema21:,.2f}) with active Red trigger candle",
+                    "points": -10
+                })
+            else:
+                detailed_rationale["execution"].append({
+                    "factor": "1-Minute Scalp Entry Trigger",
+                    "status": "NEUTRAL",
+                    "detail": f"1m micro-trend consolidating around ₹{m1_close:,.2f}",
                     "points": 0
                 })
 

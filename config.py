@@ -66,15 +66,12 @@ POPULAR_STOCKS = {
     "SBIN": {"token": "3045", "exchange": "NSE", "yfinance": "SBIN.NS"}
 }
 
-# Supported Intervals
+# Supported Intraday Intervals Only
 INTERVAL_MAPPING = {
     "1m": "ONE_MINUTE",
     "3m": "THREE_MINUTE",
     "5m": "FIVE_MINUTE",
-    "15m": "FIFTEEN_MINUTE",
-    "30m": "THIRTY_MINUTE",
-    "1h": "ONE_HOUR",
-    "1D": "ONE_DAY"
+    "15m": "FIFTEEN_MINUTE"
 }
 
 # Strategy & Risk Management Thresholds (Pillars 2 & 4)

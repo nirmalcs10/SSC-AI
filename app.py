@@ -214,14 +214,14 @@ for alert in alerts:
 
 
 # --- MAIN LOGIC (Pillars 1, 2 & 3) ---
-timeframes = ("3m", "5m", "15m", "30m", "1D")
+timeframes = ("1m", "3m", "5m", "15m")
 
 # Automatically trigger when symbol or trading mode changes, or on initial load / analyze button click
 symbol_changed = ("current_symbol" not in st.session_state) or (st.session_state.current_symbol != selected_symbol)
 mode_changed = ("current_mode" not in st.session_state) or (st.session_state.current_mode != mode_code)
 
 if analyze_btn or symbol_changed or mode_changed or st.session_state.last_analysis is None:
-    with st.spinner(f"Fetching 5-timeframe candles (Daily, 30m, 15m, 5m, 3m) & Option Chain for {selected_symbol}..."):
+    with st.spinner(f"Fetching 4 intraday timeframes (15m, 5m, 3m, 1m) & Option Chain for {selected_symbol}..."):
         mtf_data = connector.get_multi_timeframe_data(selected_symbol, timeframes=timeframes)
         st.session_state.mtf_data = mtf_data
         
@@ -244,7 +244,7 @@ mtf_data = st.session_state.mtf_data
 col_head1, col_head2 = st.columns([3, 1])
 with col_head1:
     st.title(f"{selected_symbol} — Multi-Timeframe Automated Plan")
-    st.caption(f"Current Mode: **{mode}** | Timeframes: **Daily (Major Trend/SR) • 30m (Market Dir) • 15m (Trend) • 5m (Setup) • 3m (Trigger)** | Updated: {datetime.datetime.now().strftime('%H:%M:%S IST')}")
+    st.caption(f"Current Mode: **{mode}** | Timeframes: **15m (Intraday Trend/SR) • 5m (Entry Setup) • 3m (Confirmation) • 1m (Scalp Trigger)** | Updated: {datetime.datetime.now().strftime('%H:%M:%S IST')}")
 with col_head2:
     if plan:
         st.metric("Setup Current Price", f"₹ {plan.get('current_price', 0.0):,.2f}")
@@ -328,7 +328,7 @@ if plan:
 
         w_col1, w_col2 = st.columns(2)
         with w_col1:
-            st.markdown("<h4 style='color: #00E5FF; margin: 4px 0 8px 0; font-size: 14px;'>📈 1. Macro Trend (1h / 15m)</h4>", unsafe_allow_html=True)
+            st.markdown("<h4 style='color: #00E5FF; margin: 4px 0 8px 0; font-size: 14px;'>📈 1. Intraday Trend (15m / 5m)</h4>", unsafe_allow_html=True)
             for item in rationale.get("macro", []):
                 b_col = "#00E676" if item["status"]=="BULLISH" else ("#FF1744" if item["status"]=="BEARISH" else "#FFD600")
                 b_bg = "rgba(0, 230, 118, 0.15)" if item["status"]=="BULLISH" else ("rgba(255, 23, 68, 0.15)" if item["status"]=="BEARISH" else "rgba(255, 214, 0, 0.15)")
@@ -965,7 +965,7 @@ with tab_chart:
             [
                 "🪞 Angel One Live Mirror (TradingView)",
                 "🎯 AI Confluence Setup (Auto-Levels & Trade Box)",
-                "🔲 Quad Confluence Grid (1h + 15m + 5m + 1m)"
+                "🔲 Quad Confluence Grid (15m + 5m + 3m + 1m)"
             ],
             horizontal=True
         )
@@ -973,15 +973,14 @@ with tab_chart:
         if "Quad" not in chart_view_mode:
             chart_tf = st.radio(
                 "Timeframe Role:",
-                options=["1D", "30m", "15m", "5m", "3m"],
+                options=["15m", "5m", "3m", "1m"],
                 format_func=lambda x: {
-                    "1D": "Daily (Major S/R)",
-                    "30m": "30m (Market Dir)",
-                    "15m": "15m (Trend)",
-                    "5m": "5m (Setup)",
-                    "3m": "3m (Trigger)"
+                    "15m": "15m (Intraday Trend)",
+                    "5m": "5m (Entry Setup)",
+                    "3m": "3m (Confirmation)",
+                    "1m": "1m (Scalp Trigger)"
                 }.get(x, x),
-                index=3,
+                index=1,
                 horizontal=True
             )
 
@@ -1062,8 +1061,8 @@ with tab_chart:
             st.info("Loading Angel One live candle stream for AI Confluence...")
     else:
         # Quad 2x2 Confluence Grid View (Angel One Multi-Chart Style)
-        st.caption("Synchronized Multi-Timeframe Confluence Grid • Visualizing Macro (1h) down to Micro Trigger (1m)")
-        grid_tf_pairs = [("1h", "15m"), ("5m", "1m")]
+        st.caption("Synchronized Intraday Confluence Grid • Visualizing 15m Trend down to 1m Scalp Trigger")
+        grid_tf_pairs = [("15m", "5m"), ("3m", "1m")]
         
         for tf_left, tf_right in grid_tf_pairs:
             g_col1, g_col2 = st.columns(2)

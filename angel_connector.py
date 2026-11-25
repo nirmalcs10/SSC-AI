@@ -761,15 +761,12 @@ class AngelOneConnector:
                 except Exception as e:
                     logger.warning(f"Resampling 1m to 3m failed: {e}")
 
-        # yfinance interval and period mapping
+        # yfinance interval and period mapping (Intraday Only: 1m, 3m, 5m, 15m)
         yf_intervals = {
             "1m": ("1m", "5d"),
             "3m": ("1m", "5d"),
             "5m": ("5m", "30d"),
-            "15m": ("15m", "60d"),
-            "30m": ("30m", "60d"),
-            "1h": ("60m", "730d"),
-            "1D": ("1d", "max")
+            "15m": ("15m", "60d")
         }
         yf_interval, yf_period = yf_intervals.get(interval, ("15m", "60d"))
         
@@ -807,7 +804,7 @@ class AngelOneConnector:
         """Generates realistic market candles when external feeds are unavailable."""
         base_price = 25200.0 if "NIFTY" in symbol.upper() and "BANK" not in symbol.upper() else (62200.0 if "BANK" in symbol.upper() else 1000.0)
         now = datetime.datetime.now()
-        mins_map = {"1m": 1, "3m": 3, "5m": 5, "15m": 15, "30m": 30, "1h": 60, "1D": 1440}
+        mins_map = {"1m": 1, "3m": 3, "5m": 5, "15m": 15}
         step_min = mins_map.get(interval, 5)
         
         times = [now - datetime.timedelta(minutes=step_min * i) for i in range(count)]
@@ -834,9 +831,9 @@ class AngelOneConnector:
             "volume": volumes
         })
 
-    def get_multi_timeframe_data(self, symbol: str, timeframes=("3m", "5m", "15m", "30m", "1D")) -> Dict[str, pd.DataFrame]:
+    def get_multi_timeframe_data(self, symbol: str, timeframes=("1m", "3m", "5m", "15m")) -> Dict[str, pd.DataFrame]:
         """
-        Ingest real, accurate multi-timeframe candles (Daily, 30m, 15m, 5m, 3m).
+        Ingest real, accurate intraday multi-timeframe candles (15m, 5m, 3m, 1m).
         Tries Angel One SmartAPI -> Real live NSE historical feed via yfinance -> Calibrated baseline.
         """
         data = {}
@@ -845,7 +842,7 @@ class AngelOneConnector:
         for tf in timeframes:
             df = None
             if self.is_authenticated:
-                days_back = {"1m": 3, "3m": 5, "5m": 10, "15m": 30, "30m": 60, "1h": 90, "1D": 365}.get(tf, 15)
+                days_back = {"1m": 3, "3m": 5, "5m": 10, "15m": 30}.get(tf, 15)
                 from_date = (now - datetime.timedelta(days=days_back)).strftime("%Y-%m-%d 09:15")
                 to_date = now.strftime("%Y-%m-%d 15:30")
                 df = self.fetch_candles_angel(symbol, tf, from_date, to_date)
