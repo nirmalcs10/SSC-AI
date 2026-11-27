@@ -140,9 +140,9 @@ def run_tests():
     from angel_chart_mirror import render_angel_one_smartapi_chart
     df_1h_test = plan.get("df_1h") if plan.get("df_1h") is not None else mtf_data.get("1h")
     assert df_1h_test is not None and not df_1h_test.empty, "df_1h must be generated and available"
-    render_angel_one_smartapi_chart(df=mtf_data["5m"], symbol="NIFTY", interval="5m", trade_plan=plan, height=460)
-    render_angel_one_smartapi_chart(df=df_1h_test, symbol="NIFTY", interval="1h", trade_plan=plan, height=460)
-    print("Verified Angel One SmartAPI Feed (TradingView Engine) charts generated cleanly for 5m & 1h!")
+    render_angel_one_smartapi_chart(df=mtf_data["5m"], symbol="NIFTY", interval="5m", trade_plan=plan, show_sr=False, show_cpr=False, show_pdh_pdl=False, show_trade_overlay=False, height=460)
+    render_angel_one_smartapi_chart(df=df_1h_test, symbol="NIFTY", interval="1h", trade_plan=plan, show_sr=False, show_cpr=False, show_pdh_pdl=False, show_trade_overlay=False, height=460)
+    print("Verified Plain Angel One SmartAPI Feed (No Support, Resistance, CPR) generated cleanly for 5m & 1h!")
 
     print("\n=== Step 5: Testing Institutional Risk Management Guard (Pillar 4) ===")
     test_wallet_file = Path(__file__).resolve().parent / "data" / "test_risk_wallet_final.json"

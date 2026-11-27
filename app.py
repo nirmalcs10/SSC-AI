@@ -416,17 +416,17 @@ if plan:
                 </div>
                 """, unsafe_allow_html=True)
 
-            # Embedded TradingView Chart (Angel One SmartAPI Feed • No Restrictions)
+            # Embedded Plain TradingView Chart (No Support, Resistance, CPR or Overlays)
             if chart_df is not None and not chart_df.empty:
                 render_angel_one_smartapi_chart(
                     df=chart_df,
                     symbol=selected_symbol,
                     interval=tf_code,
                     trade_plan=plan,
-                    show_sr=show_sr,
-                    show_cpr=show_cpr,
-                    show_pdh_pdl=show_pdh_pdl,
-                    show_trade_overlay=show_trade_overlay,
+                    show_sr=False,
+                    show_cpr=False,
+                    show_pdh_pdl=False,
+                    show_trade_overlay=False,
                     height=460
                 )
 

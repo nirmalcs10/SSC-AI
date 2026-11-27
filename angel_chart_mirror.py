@@ -181,7 +181,7 @@ def render_tradingview_confluence_chart(
                 })
 
             # Signal Arrow Marker on Latest Candle
-            if candle_records and direction in ("BUY", "SELL"):
+            if show_trade_overlay and candle_records and direction in ("BUY", "SELL"):
                 last_time = candle_records[-1]["time"]
                 if direction == "BUY":
                     markers.append({
@@ -501,11 +501,11 @@ def render_angel_one_smartapi_chart(
     show_sr: bool = False,
     show_cpr: bool = False,
     show_pdh_pdl: bool = False,
-    show_trade_overlay: bool = True,
+    show_trade_overlay: bool = False,
     height: int = 480
 ):
     """
-    Renders pure Angel One SmartAPI chart with Trade Box using native TradingView Lightweight Charts engine.
+    Renders pure, plain Angel One SmartAPI chart (or optional overlays) using native TradingView Lightweight Charts engine.
     """
     render_tradingview_confluence_chart(
         df=df,
