@@ -338,7 +338,24 @@ if plan:
 
         pat_col1, pat_col2 = st.columns(2)
 
-        def render_pattern_box(p_data, tf_title):
+        df_5m_chart = mtf_data.get("5m") if mtf_data else None
+        df_1h_chart = mtf_data.get("1h") if mtf_data else None
+        if df_1h_chart is None and plan:
+            df_1h_chart = plan.get("df_1h")
+        if df_1h_chart is None and mtf_data and "15m" in mtf_data and mtf_data["15m"] is not None:
+            try:
+                df_15m_c = mtf_data["15m"]
+                if "datetime" in df_15m_c.columns and len(df_15m_c) >= 4:
+                    df_1h_raw = df_15m_c.copy().set_index("datetime")
+                    df_1h_res = df_1h_raw.resample("1h").agg({
+                        "open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"
+                    }).dropna().reset_index()
+                    if not df_1h_res.empty:
+                        df_1h_chart = IndicatorEngine.apply_all(df_1h_res)
+            except Exception:
+                df_1h_chart = None
+
+        def render_pattern_box(p_data, tf_title, chart_df=None, tf_code="5m"):
             regime = p_data.get("regime", "SIDE WAVE")
             regime_col = p_data.get("regime_color", "#FFD600")
             regime_score = p_data.get("regime_score", 50)
@@ -399,11 +416,34 @@ if plan:
                 </div>
                 """, unsafe_allow_html=True)
 
+            # Embedded Interactive Candlestick Chart (TradingView / Angel One Style)
+            if chart_df is not None and not chart_df.empty:
+                st.markdown(f"<div style='margin-top: 8px; margin-bottom: 4px;'><span style='color: #00E5FF; font-weight: bold; font-size: 12px;'>📊 {tf_code.upper()} Interactive Candlestick Chart</span></div>", unsafe_allow_html=True)
+                fig_sub = ChartPlotter.create_trade_chart(
+                    df=chart_df,
+                    trade_plan=plan,
+                    timeframe=tf_code,
+                    show_sr=show_sr,
+                    show_cpr=show_cpr,
+                    show_pdh_pdl=show_pdh_pdl,
+                    show_fvg=show_fvg,
+                    show_trade_overlay=show_trade_overlay,
+                    height=360,
+                    is_grid_compact=True
+                )
+                why_cfg = {
+                    "scrollZoom": True,
+                    "displayModeBar": True,
+                    "responsive": True,
+                    "modeBarButtonsToAdd": ["drawline", "drawopenpath", "eraseshape"]
+                }
+                st.plotly_chart(fig_sub, use_container_width=True, config=why_cfg, key=f"why_chart_{tf_code}")
+
         with pat_col1:
-            render_pattern_box(p_5m, "⏱️ 5-Minute Chart Pattern Setup (Intraday)")
+            render_pattern_box(p_5m, "⏱️ 5-Minute Chart Pattern Setup (Intraday)", chart_df=df_5m_chart, tf_code="5m")
 
         with pat_col2:
-            render_pattern_box(p_1h, "🕒 1-Hour Chart Pattern Structure (Higher-TF)")
+            render_pattern_box(p_1h, "🕒 1-Hour Chart Pattern Structure (Higher-TF)", chart_df=df_1h_chart, tf_code="1h")
 
         st.markdown("<hr style='border: 0; border-top: 1px solid #21262D; margin: 12px 0 16px 0;'>", unsafe_allow_html=True)
 

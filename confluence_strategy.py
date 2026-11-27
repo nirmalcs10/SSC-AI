@@ -106,6 +106,8 @@ class ConfluenceStrategy:
                 }).dropna().reset_index()
                 if not df_1h_res.empty and len(df_1h_res) >= 3:
                     df_1h = IndicatorEngine.apply_all(df_1h_res)
+                    if mtf_data is not None:
+                        mtf_data["1h"] = df_1h
             except Exception as e:
                 df_1h = None
 
@@ -653,6 +655,7 @@ class ConfluenceStrategy:
             "primary_pattern": primary_pattern,
             "detected_patterns": active_patterns,
             "pattern_matrix": pattern_matrix,
+            "df_1h": df_1h,
             "detailed_rationale": detailed_rationale,
             "decision_summary": decision_summary
         }

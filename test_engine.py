@@ -137,6 +137,15 @@ def run_tests():
         assert "regime" in tf_data and "bullish" in tf_data and "bearish" in tf_data and "side_wave" in tf_data
         print(f"Verified {tf_key} Pattern Matrix: Regime={tf_data['regime']} (Bullish: {len(tf_data['bullish'])}, Bearish: {len(tf_data['bearish'])}, Side Wave: {len(tf_data['side_wave'])})")
 
+    from chart_plotter import ChartPlotter
+    df_1h_test = plan.get("df_1h") if plan.get("df_1h") is not None else mtf_data.get("1h")
+    assert df_1h_test is not None and not df_1h_test.empty, "df_1h must be generated and available"
+    fig_5m = ChartPlotter.create_trade_chart(df=mtf_data["5m"], trade_plan=plan, timeframe="5m", height=360, is_grid_compact=True)
+    fig_1h = ChartPlotter.create_trade_chart(df=df_1h_test, trade_plan=plan, timeframe="1h", height=360, is_grid_compact=True)
+    assert len(fig_5m.data) >= 2, "5m figure must contain candle traces"
+    assert len(fig_1h.data) >= 2, "1h figure must contain candle traces"
+    print("Verified interactive 5m and 1h chart figures generated cleanly for Why panel!")
+
     print("\n=== Step 5: Testing Institutional Risk Management Guard (Pillar 4) ===")
     test_wallet_file = Path(__file__).resolve().parent / "data" / "test_risk_wallet_final.json"
     test_trades_file = Path(__file__).resolve().parent / "data" / "test_risk_trades_final.json"
