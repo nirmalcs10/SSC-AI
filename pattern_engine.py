@@ -17,6 +17,23 @@ from typing import Dict, Any, List, Optional
 
 class PatternEngine:
     @staticmethod
+    def _get_candle_time(df: pd.DataFrame, idx: int) -> int:
+        """Returns integer unix timestamp for candle at row index idx."""
+        try:
+            if df is not None and not df.empty:
+                # Support negative and positive index bounds
+                actual_idx = idx if idx >= 0 else len(df) + idx
+                actual_idx = max(0, min(actual_idx, len(df) - 1))
+                row = df.iloc[actual_idx]
+                if "datetime" in row and pd.notna(row["datetime"]):
+                    return int(pd.Timestamp(row["datetime"]).timestamp())
+                elif isinstance(df.index, pd.DatetimeIndex):
+                    return int(pd.Timestamp(df.index[actual_idx]).timestamp())
+        except Exception:
+            pass
+        return int(pd.Timestamp.now().timestamp())
+
+    @staticmethod
     def detect_liquidity_sweep(df: pd.DataFrame, pdh_pdl: Optional[Dict[str, float]] = None) -> Optional[Dict[str, Any]]:
         """
         Detects Institutional Liquidity Sweep + CHOCH:
@@ -45,6 +62,8 @@ class PatternEngine:
 
         # Bearish Liquidity Sweep (Swept High -> Fast Put / PE Move)
         if c_high > ref_high and c_close < ref_high and upper_wick > body * 1.2:
+            t_curr = PatternEngine._get_candle_time(df, -1)
+            t_start = PatternEngine._get_candle_time(df, -15 if len(df) >= 15 else 0)
             return {
                 "pattern_name": "Liquidity Sweep + CHOCH (High Swept)",
                 "tier": "TIER_1_OPTIMAL",
@@ -53,11 +72,47 @@ class PatternEngine:
                 "invalidation_level": round(c_high + (body * 0.2), 2),
                 "trigger_price": round(c_close, 2),
                 "confidence": 92,
-                "description": f"Institutions swept liquidity above key high (₹{ref_high:,.1f}) and aggressively rejected. Trapped CE buyers panic-selling. High probability fast PE move."
+                "description": f"Institutions swept liquidity above key high (₹{ref_high:,.1f}) and aggressively rejected. Trapped CE buyers panic-selling. High probability fast PE move.",
+                "drawing_data": {
+                    "pattern_name": "Liquidity Sweep + CHOCH (High Swept)",
+                    "lines": [
+                        {
+                            "title": "Sweep Level",
+                            "color": "#FF5252",
+                            "lineWidth": 2,
+                            "lineStyle": 1,
+                            "points": [
+                                {"time": t_start, "value": round(ref_high, 2)},
+                                {"time": t_curr, "value": round(ref_high, 2)}
+                            ]
+                        }
+                    ],
+                    "price_lines": [
+                        {
+                            "price": round(ref_high, 2),
+                            "color": "#FF5252",
+                            "lineWidth": 2,
+                            "lineStyle": 1,
+                            "axisLabelVisible": True,
+                            "title": f"Swept High: ₹{ref_high:,.1f}"
+                        }
+                    ],
+                    "markers": [
+                        {
+                            "time": t_curr,
+                            "position": "aboveBar",
+                            "color": "#FF1744",
+                            "shape": "arrowDown",
+                            "text": f"Swept High @ ₹{c_high:,.1f} (CHOCH Rejection)"
+                        }
+                    ]
+                }
             }
 
         # Bullish Liquidity Sweep (Swept Low -> Fast Call / CE Move)
         if c_low < ref_low and c_close > ref_low and lower_wick > body * 1.2:
+            t_curr = PatternEngine._get_candle_time(df, -1)
+            t_start = PatternEngine._get_candle_time(df, -15 if len(df) >= 15 else 0)
             return {
                 "pattern_name": "Liquidity Sweep + CHOCH (Low Swept)",
                 "tier": "TIER_1_OPTIMAL",
@@ -66,7 +121,41 @@ class PatternEngine:
                 "invalidation_level": round(c_low - (body * 0.2), 2),
                 "trigger_price": round(c_close, 2),
                 "confidence": 92,
-                "description": f"Institutions swept stops below key low (₹{ref_low:,.1f}) and aggressively reclaimed support. Trapped PE sellers covering. High probability fast CE move."
+                "description": f"Institutions swept stops below key low (₹{ref_low:,.1f}) and aggressively reclaimed support. Trapped PE sellers covering. High probability fast CE move.",
+                "drawing_data": {
+                    "pattern_name": "Liquidity Sweep + CHOCH (Low Swept)",
+                    "lines": [
+                        {
+                            "title": "Sweep Level",
+                            "color": "#00E676",
+                            "lineWidth": 2,
+                            "lineStyle": 1,
+                            "points": [
+                                {"time": t_start, "value": round(ref_low, 2)},
+                                {"time": t_curr, "value": round(ref_low, 2)}
+                            ]
+                        }
+                    ],
+                    "price_lines": [
+                        {
+                            "price": round(ref_low, 2),
+                            "color": "#00E676",
+                            "lineWidth": 2,
+                            "lineStyle": 1,
+                            "axisLabelVisible": True,
+                            "title": f"Swept Low: ₹{ref_low:,.1f}"
+                        }
+                    ],
+                    "markers": [
+                        {
+                            "time": t_curr,
+                            "position": "belowBar",
+                            "color": "#00E676",
+                            "shape": "arrowUp",
+                            "text": f"Swept Low @ ₹{c_low:,.1f} (CHOCH Reclaim)"
+                        }
+                    ]
+                }
             }
 
         return None
@@ -98,6 +187,11 @@ class PatternEngine:
             flag_high = float(flag_df["high"].max())
             flag_low = float(flag_df["low"].min())
             if b_close > flag_high and b_vol >= b_vol_ma * 0.90:
+                t_pole_start = PatternEngine._get_candle_time(df, -10)
+                t_pole_end = PatternEngine._get_candle_time(df, -4)
+                t_flag_end = PatternEngine._get_candle_time(df, -1)
+                p_pole_start = float(pole_df["close"].iloc[0])
+                p_pole_end = float(pole_df["close"].iloc[-1])
                 return {
                     "pattern_name": "Bull Flag Breakout",
                     "tier": "TIER_1_OPTIMAL",
@@ -106,7 +200,57 @@ class PatternEngine:
                     "invalidation_level": round(flag_low, 2),
                     "trigger_price": round(b_close, 2),
                     "confidence": 88,
-                    "description": f"Impulsive pole upward confirmed by tight consolidation flag. Clean breakout above ₹{flag_high:,.1f} with volume expansion. Ideal momentum for option gamma."
+                    "description": f"Impulsive pole upward confirmed by tight consolidation flag. Clean breakout above ₹{flag_high:,.1f} with volume expansion. Ideal momentum for option gamma.",
+                    "drawing_data": {
+                        "pattern_name": "Bull Flag Breakout",
+                        "lines": [
+                            {
+                                "title": "Impulse Pole",
+                                "color": "#00E5FF",
+                                "lineWidth": 3,
+                                "lineStyle": 0,
+                                "points": [
+                                    {"time": t_pole_start, "value": round(p_pole_start, 2)},
+                                    {"time": t_pole_end, "value": round(p_pole_end, 2)}
+                                ]
+                            },
+                            {
+                                "title": "Flag Resistance",
+                                "color": "#00E676",
+                                "lineWidth": 2,
+                                "lineStyle": 2,
+                                "points": [
+                                    {"time": t_pole_end, "value": round(flag_high, 2)},
+                                    {"time": t_flag_end, "value": round(flag_high, 2)}
+                                ]
+                            },
+                            {
+                                "title": "Flag Support",
+                                "color": "#00E676",
+                                "lineWidth": 2,
+                                "lineStyle": 2,
+                                "points": [
+                                    {"time": t_pole_end, "value": round(flag_low, 2)},
+                                    {"time": t_flag_end, "value": round(flag_low, 2)}
+                                ]
+                            }
+                        ],
+                        "price_lines": [
+                            {
+                                "price": round(flag_high, 2),
+                                "color": "#00E676",
+                                "lineWidth": 2,
+                                "lineStyle": 0,
+                                "axisLabelVisible": True,
+                                "title": f"Flag Breakout: ₹{flag_high:,.1f}"
+                            }
+                        ],
+                        "markers": [
+                            {"time": t_pole_start, "position": "belowBar", "color": "#00E5FF", "shape": "circle", "text": "Pole Start"},
+                            {"time": t_pole_end, "position": "aboveBar", "color": "#00E5FF", "shape": "circle", "text": "Flag Pole"},
+                            {"time": t_flag_end, "position": "belowBar", "color": "#00E676", "shape": "arrowUp", "text": f"Bull Flag Breakout @ ₹{b_close:,.1f}"}
+                        ]
+                    }
                 }
 
         # Bear Flag: Strong down pole, tight flag consolidation, breakdown downward with volume
@@ -114,6 +258,11 @@ class PatternEngine:
             flag_high = float(flag_df["high"].max())
             flag_low = float(flag_df["low"].min())
             if b_close < flag_low and b_vol >= b_vol_ma * 0.90:
+                t_pole_start = PatternEngine._get_candle_time(df, -10)
+                t_pole_end = PatternEngine._get_candle_time(df, -4)
+                t_flag_end = PatternEngine._get_candle_time(df, -1)
+                p_pole_start = float(pole_df["close"].iloc[0])
+                p_pole_end = float(pole_df["close"].iloc[-1])
                 return {
                     "pattern_name": "Bear Flag Breakdown",
                     "tier": "TIER_1_OPTIMAL",
@@ -122,7 +271,57 @@ class PatternEngine:
                     "invalidation_level": round(flag_high, 2),
                     "trigger_price": round(b_close, 2),
                     "confidence": 88,
-                    "description": f"Sharp impulse downward confirmed by bear flag. Clean breakdown below ₹{flag_low:,.1f} with volume. Trapped dip-buyers will fuel rapid PE expansion."
+                    "description": f"Sharp impulse downward confirmed by bear flag. Clean breakdown below ₹{flag_low:,.1f} with volume. Trapped dip-buyers will fuel rapid PE expansion.",
+                    "drawing_data": {
+                        "pattern_name": "Bear Flag Breakdown",
+                        "lines": [
+                            {
+                                "title": "Impulse Pole",
+                                "color": "#00E5FF",
+                                "lineWidth": 3,
+                                "lineStyle": 0,
+                                "points": [
+                                    {"time": t_pole_start, "value": round(p_pole_start, 2)},
+                                    {"time": t_pole_end, "value": round(p_pole_end, 2)}
+                                ]
+                            },
+                            {
+                                "title": "Flag Resistance",
+                                "color": "#FF1744",
+                                "lineWidth": 2,
+                                "lineStyle": 2,
+                                "points": [
+                                    {"time": t_pole_end, "value": round(flag_high, 2)},
+                                    {"time": t_flag_end, "value": round(flag_high, 2)}
+                                ]
+                            },
+                            {
+                                "title": "Flag Support",
+                                "color": "#FF1744",
+                                "lineWidth": 2,
+                                "lineStyle": 2,
+                                "points": [
+                                    {"time": t_pole_end, "value": round(flag_low, 2)},
+                                    {"time": t_flag_end, "value": round(flag_low, 2)}
+                                ]
+                            }
+                        ],
+                        "price_lines": [
+                            {
+                                "price": round(flag_low, 2),
+                                "color": "#FF1744",
+                                "lineWidth": 2,
+                                "lineStyle": 0,
+                                "axisLabelVisible": True,
+                                "title": f"Flag Breakdown: ₹{flag_low:,.1f}"
+                            }
+                        ],
+                        "markers": [
+                            {"time": t_pole_start, "position": "aboveBar", "color": "#00E5FF", "shape": "circle", "text": "Pole Start"},
+                            {"time": t_pole_end, "position": "belowBar", "color": "#00E5FF", "shape": "circle", "text": "Flag Pole"},
+                            {"time": t_flag_end, "position": "aboveBar", "color": "#FF1744", "shape": "arrowDown", "text": f"Bear Flag Breakdown @ ₹{b_close:,.1f}"}
+                        ]
+                    }
                 }
 
         return None
@@ -153,6 +352,9 @@ class PatternEngine:
         is_inside = (i_high <= m_high * 1.0005) and (i_low >= m_low * 0.9995)
 
         if is_inside:
+            t_mother = PatternEngine._get_candle_time(df, -3)
+            t_inside = PatternEngine._get_candle_time(df, -2)
+            t_curr = PatternEngine._get_candle_time(df, -1)
             # Bullish Inside Bar Breakout
             if c_close > m_high and c_vol >= c_vol_ma * 0.90:
                 return {
@@ -163,7 +365,47 @@ class PatternEngine:
                     "invalidation_level": round(i_low, 2),
                     "trigger_price": round(c_close, 2),
                     "confidence": 85,
-                    "description": f"Volatility compression inside ₹{m_low:,.1f} - ₹{m_high:,.1f} resolved upward with volume surge. Rapid IV expansion and delta burst favor option buying."
+                    "description": f"Volatility compression inside ₹{m_low:,.1f} - ₹{m_high:,.1f} resolved upward with volume surge. Rapid IV expansion and delta burst favor option buying.",
+                    "drawing_data": {
+                        "pattern_name": "Inside Bar Compression Breakout",
+                        "lines": [
+                            {
+                                "title": "Mother High",
+                                "color": "#00E676",
+                                "lineWidth": 2,
+                                "lineStyle": 2,
+                                "points": [
+                                    {"time": t_mother, "value": round(m_high, 2)},
+                                    {"time": t_curr, "value": round(m_high, 2)}
+                                ]
+                            },
+                            {
+                                "title": "Mother Low",
+                                "color": "#00E676",
+                                "lineWidth": 2,
+                                "lineStyle": 2,
+                                "points": [
+                                    {"time": t_mother, "value": round(m_low, 2)},
+                                    {"time": t_curr, "value": round(m_low, 2)}
+                                ]
+                            }
+                        ],
+                        "price_lines": [
+                            {
+                                "price": round(m_high, 2),
+                                "color": "#00E676",
+                                "lineWidth": 2,
+                                "lineStyle": 0,
+                                "axisLabelVisible": True,
+                                "title": f"Mother High: ₹{m_high:,.1f}"
+                            }
+                        ],
+                        "markers": [
+                            {"time": t_mother, "position": "aboveBar", "color": "#00E5FF", "shape": "circle", "text": "Mother Bar"},
+                            {"time": t_inside, "position": "aboveBar", "color": "#FFD600", "shape": "circle", "text": "Inside Bar (Coil)"},
+                            {"time": t_curr, "position": "belowBar", "color": "#00E676", "shape": "arrowUp", "text": f"Breakout @ ₹{c_close:,.1f}"}
+                        ]
+                    }
                 }
             # Bearish Inside Bar Breakdown
             elif c_close < m_low and c_vol >= c_vol_ma * 0.90:
@@ -175,7 +417,47 @@ class PatternEngine:
                     "invalidation_level": round(i_high, 2),
                     "trigger_price": round(c_close, 2),
                     "confidence": 85,
-                    "description": f"Volatility compression resolved downward below ₹{m_low:,.1f} with volume surge. Fast sell-off creates immediate option delta expansion."
+                    "description": f"Volatility compression resolved downward below ₹{m_low:,.1f} with volume surge. Fast sell-off creates immediate option delta expansion.",
+                    "drawing_data": {
+                        "pattern_name": "Inside Bar Compression Breakdown",
+                        "lines": [
+                            {
+                                "title": "Mother High",
+                                "color": "#FF1744",
+                                "lineWidth": 2,
+                                "lineStyle": 2,
+                                "points": [
+                                    {"time": t_mother, "value": round(m_high, 2)},
+                                    {"time": t_curr, "value": round(m_high, 2)}
+                                ]
+                            },
+                            {
+                                "title": "Mother Low",
+                                "color": "#FF1744",
+                                "lineWidth": 2,
+                                "lineStyle": 2,
+                                "points": [
+                                    {"time": t_mother, "value": round(m_low, 2)},
+                                    {"time": t_curr, "value": round(m_low, 2)}
+                                ]
+                            }
+                        ],
+                        "price_lines": [
+                            {
+                                "price": round(m_low, 2),
+                                "color": "#FF1744",
+                                "lineWidth": 2,
+                                "lineStyle": 0,
+                                "axisLabelVisible": True,
+                                "title": f"Mother Low: ₹{m_low:,.1f}"
+                            }
+                        ],
+                        "markers": [
+                            {"time": t_mother, "position": "belowBar", "color": "#00E5FF", "shape": "circle", "text": "Mother Bar"},
+                            {"time": t_inside, "position": "belowBar", "color": "#FFD600", "shape": "circle", "text": "Inside Bar (Coil)"},
+                            {"time": t_curr, "position": "aboveBar", "color": "#FF1744", "shape": "arrowDown", "text": f"Breakdown @ ₹{c_close:,.1f}"}
+                        ]
+                    }
                 }
 
         return None
@@ -204,8 +486,15 @@ class PatternEngine:
                 low2 = lows[idx2]
                 if abs(low1 - low2) / low1 <= 0.0025:  # Within 0.25%
                     # Neckline is the highest peak between the two bottoms
-                    neckline = float(highs[idx1:idx2+1].max())
+                    neck_rel = int(np.argmax(highs[idx1:idx2+1]))
+                    neck_idx = idx1 + neck_rel
+                    neckline = float(highs[neck_idx])
                     if c_close > neckline:
+                        t_start = PatternEngine._get_candle_time(df, -15)
+                        t_b1 = PatternEngine._get_candle_time(df, -15 + idx1)
+                        t_mid = PatternEngine._get_candle_time(df, -15 + neck_idx)
+                        t_b2 = PatternEngine._get_candle_time(df, -15 + idx2)
+                        t_break = PatternEngine._get_candle_time(df, -1)
                         return {
                             "pattern_name": "Double Bottom (W Pattern)",
                             "tier": "TIER_1_OPTIMAL",
@@ -214,7 +503,41 @@ class PatternEngine:
                             "invalidation_level": round(min(low1, low2), 2),
                             "trigger_price": round(c_close, 2),
                             "confidence": 87,
-                            "description": f"Classic W Pattern confirmed with twin bottoms at ₹{low1:,.1f} & ₹{low2:,.1f}. Neckline broken at ₹{neckline:,.1f}. Strong institutional support base."
+                            "description": f"Classic W Pattern confirmed with twin bottoms at ₹{low1:,.1f} & ₹{low2:,.1f}. Neckline broken at ₹{neckline:,.1f}. Strong institutional support base.",
+                            "drawing_data": {
+                                "pattern_name": "Double Bottom (W Pattern)",
+                                "lines": [
+                                    {
+                                        "title": "W Pattern",
+                                        "color": "#00E676",
+                                        "lineWidth": 3,
+                                        "lineStyle": 0,
+                                        "points": [
+                                            {"time": t_start, "value": round(float(highs[0]), 2)},
+                                            {"time": t_b1, "value": round(float(low1), 2)},
+                                            {"time": t_mid, "value": round(float(neckline), 2)},
+                                            {"time": t_b2, "value": round(float(low2), 2)},
+                                            {"time": t_break, "value": round(float(c_close), 2)}
+                                        ]
+                                    }
+                                ],
+                                "price_lines": [
+                                    {
+                                        "price": round(neckline, 2),
+                                        "color": "#FFD600",
+                                        "lineWidth": 2,
+                                        "lineStyle": 0,
+                                        "axisLabelVisible": True,
+                                        "title": f"W Neckline: ₹{neckline:,.1f}"
+                                    }
+                                ],
+                                "markers": [
+                                    {"time": t_b1, "position": "belowBar", "color": "#00E676", "shape": "circle", "text": f"Bottom 1 (₹{low1:,.1f})"},
+                                    {"time": t_mid, "position": "aboveBar", "color": "#FFD600", "shape": "circle", "text": f"Peak (₹{neckline:,.1f})"},
+                                    {"time": t_b2, "position": "belowBar", "color": "#00E676", "shape": "circle", "text": f"Bottom 2 (₹{low2:,.1f})"},
+                                    {"time": t_break, "position": "belowBar", "color": "#00E676", "shape": "arrowUp", "text": f"Neckline Breakout @ ₹{c_close:,.1f}"}
+                                ]
+                            }
                         }
 
         # Identify local maxima
@@ -225,8 +548,15 @@ class PatternEngine:
                 high1 = highs[idx1]
                 high2 = highs[idx2]
                 if abs(high1 - high2) / high1 <= 0.0025:
-                    neckline = float(lows[idx1:idx2+1].min())
+                    neck_rel = int(np.argmin(lows[idx1:idx2+1]))
+                    neck_idx = idx1 + neck_rel
+                    neckline = float(lows[neck_idx])
                     if c_close < neckline:
+                        t_start = PatternEngine._get_candle_time(df, -15)
+                        t_t1 = PatternEngine._get_candle_time(df, -15 + idx1)
+                        t_mid = PatternEngine._get_candle_time(df, -15 + neck_idx)
+                        t_t2 = PatternEngine._get_candle_time(df, -15 + idx2)
+                        t_break = PatternEngine._get_candle_time(df, -1)
                         return {
                             "pattern_name": "Double Top (M Pattern)",
                             "tier": "TIER_1_OPTIMAL",
@@ -235,7 +565,41 @@ class PatternEngine:
                             "invalidation_level": round(max(high1, high2), 2),
                             "trigger_price": round(c_close, 2),
                             "confidence": 87,
-                            "description": f"Classic M Pattern confirmed with dual rejections at ₹{high1:,.1f} & ₹{high2:,.1f}. Neckline broken at ₹{neckline:,.1f}. Overhead supply dominates."
+                            "description": f"Classic M Pattern confirmed with dual rejections at ₹{high1:,.1f} & ₹{high2:,.1f}. Neckline broken at ₹{neckline:,.1f}. Overhead supply dominates.",
+                            "drawing_data": {
+                                "pattern_name": "Double Top (M Pattern)",
+                                "lines": [
+                                    {
+                                        "title": "M Pattern",
+                                        "color": "#FF5252",
+                                        "lineWidth": 3,
+                                        "lineStyle": 0,
+                                        "points": [
+                                            {"time": t_start, "value": round(float(lows[0]), 2)},
+                                            {"time": t_t1, "value": round(float(high1), 2)},
+                                            {"time": t_mid, "value": round(float(neckline), 2)},
+                                            {"time": t_t2, "value": round(float(high2), 2)},
+                                            {"time": t_break, "value": round(float(c_close), 2)}
+                                        ]
+                                    }
+                                ],
+                                "price_lines": [
+                                    {
+                                        "price": round(neckline, 2),
+                                        "color": "#FFD600",
+                                        "lineWidth": 2,
+                                        "lineStyle": 0,
+                                        "axisLabelVisible": True,
+                                        "title": f"M Neckline: ₹{neckline:,.1f}"
+                                    }
+                                ],
+                                "markers": [
+                                    {"time": t_t1, "position": "aboveBar", "color": "#FF5252", "shape": "circle", "text": f"Top 1 (₹{high1:,.1f})"},
+                                    {"time": t_mid, "position": "belowBar", "color": "#FFD600", "shape": "circle", "text": f"Neckline (₹{neckline:,.1f})"},
+                                    {"time": t_t2, "position": "aboveBar", "color": "#FF5252", "shape": "circle", "text": f"Top 2 (₹{high2:,.1f})"},
+                                    {"time": t_break, "position": "aboveBar", "color": "#FF1744", "shape": "arrowDown", "text": f"Neckline Breakdown @ ₹{c_close:,.1f}"}
+                                ]
+                            }
                         }
 
         return None
@@ -358,6 +722,8 @@ class PatternEngine:
             band_pct = ((recent_high - recent_low) / c_close) * 100
             # If the entire 10-candle range is within 0.45% (tight consolidation)
             if band_pct <= 0.50:
+                t_start = PatternEngine._get_candle_time(df, -10 if len(df) >= 10 else 0)
+                t_end = PatternEngine._get_candle_time(df, -1)
                 patterns.append({
                     "pattern_name": "Range-Bound Consolidation Box (Sideways)",
                     "category": "SIDE_WAVE",
@@ -367,7 +733,54 @@ class PatternEngine:
                     "invalidation_level": round(recent_high, 2),
                     "trigger_price": round(c_close, 2),
                     "confidence": 88,
-                    "description": f"Price is trapped in a narrow sideways channel (₹{recent_low:,.1f} - ₹{recent_high:,.1f}, {band_pct:.2f}% range). High risk of option premium decay. Wait for decisive breakout."
+                    "description": f"Price is trapped in a narrow sideways channel (₹{recent_low:,.1f} - ₹{recent_high:,.1f}, {band_pct:.2f}% range). High risk of option premium decay. Wait for decisive breakout.",
+                    "drawing_data": {
+                        "pattern_name": "Range-Bound Consolidation Box (Sideways)",
+                        "lines": [
+                            {
+                                "title": "Box Ceiling",
+                                "color": "#FFD600",
+                                "lineWidth": 2,
+                                "lineStyle": 2,
+                                "points": [
+                                    {"time": t_start, "value": round(recent_high, 2)},
+                                    {"time": t_end, "value": round(recent_high, 2)}
+                                ]
+                            },
+                            {
+                                "title": "Box Floor",
+                                "color": "#FFD600",
+                                "lineWidth": 2,
+                                "lineStyle": 2,
+                                "points": [
+                                    {"time": t_start, "value": round(recent_low, 2)},
+                                    {"time": t_end, "value": round(recent_low, 2)}
+                                ]
+                            }
+                        ],
+                        "price_lines": [
+                            {
+                                "price": round(recent_high, 2),
+                                "color": "#FFD600",
+                                "lineWidth": 2,
+                                "lineStyle": 2,
+                                "axisLabelVisible": True,
+                                "title": f"Box Ceiling: ₹{recent_high:,.1f}"
+                            },
+                            {
+                                "price": round(recent_low, 2),
+                                "color": "#FFD600",
+                                "lineWidth": 2,
+                                "lineStyle": 2,
+                                "axisLabelVisible": True,
+                                "title": f"Box Floor: ₹{recent_low:,.1f}"
+                            }
+                        ],
+                        "markers": [
+                            {"time": t_start, "position": "aboveBar", "color": "#FFD600", "shape": "circle", "text": "Consolidation Box"},
+                            {"time": t_end, "position": "belowBar", "color": "#FFD600", "shape": "circle", "text": f"Range ₹{recent_low:,.0f}-₹{recent_high:,.0f}"}
+                        ]
+                    }
                 })
 
         # 2. Inside Bar / Coil Compression
@@ -516,7 +929,17 @@ class PatternEngine:
                     "invalidation_level": round(c_low, 2),
                     "trigger_price": round(c_close, 2),
                     "confidence": 85,
-                    "description": f"Strong bullish candle completely engulfs previous red candle. Aggressive buyer entry."
+                    "description": f"Strong bullish candle completely engulfs previous red candle. Aggressive buyer entry.",
+                    "drawing_data": {
+                        "pattern_name": "Bullish Engulfing Pattern",
+                        "lines": [],
+                        "price_lines": [
+                            {"price": round(c_low, 2), "color": "#00E676", "lineWidth": 1, "lineStyle": 2, "axisLabelVisible": True, "title": f"Engulfing SL: ₹{c_low:,.1f}"}
+                        ],
+                        "markers": [
+                            {"time": cls._get_candle_time(df, -1), "position": "belowBar", "color": "#00E676", "shape": "arrowUp", "text": "Bullish Engulfing"}
+                        ]
+                    }
                 })
             # Bearish Engulfing
             elif p_close > p_open and c_close < c_open and c_close < p_open and c_open > p_close:
@@ -529,7 +952,17 @@ class PatternEngine:
                     "invalidation_level": round(c_high, 2),
                     "trigger_price": round(c_close, 2),
                     "confidence": 85,
-                    "description": f"Strong bearish candle completely engulfs previous green candle. Sellers seize control."
+                    "description": f"Strong bearish candle completely engulfs previous green candle. Sellers seize control.",
+                    "drawing_data": {
+                        "pattern_name": "Bearish Engulfing Pattern",
+                        "lines": [],
+                        "price_lines": [
+                            {"price": round(c_high, 2), "color": "#FF1744", "lineWidth": 1, "lineStyle": 2, "axisLabelVisible": True, "title": f"Engulfing SL: ₹{c_high:,.1f}"}
+                        ],
+                        "markers": [
+                            {"time": cls._get_candle_time(df, -1), "position": "aboveBar", "color": "#FF1744", "shape": "arrowDown", "text": "Bearish Engulfing"}
+                        ]
+                    }
                 })
 
             # Hammer (Bullish at support)
@@ -543,7 +976,17 @@ class PatternEngine:
                     "invalidation_level": round(c_low, 2),
                     "trigger_price": round(c_close, 2),
                     "confidence": 80,
-                    "description": f"Long lower shadow ({lower_wick:.1f} pts) shows intense rejection of lower prices."
+                    "description": f"Long lower shadow ({lower_wick:.1f} pts) shows intense rejection of lower prices.",
+                    "drawing_data": {
+                        "pattern_name": "Bullish Hammer / Pin Bar",
+                        "lines": [],
+                        "price_lines": [
+                            {"price": round(c_low, 2), "color": "#00E676", "lineWidth": 1, "lineStyle": 2, "axisLabelVisible": True, "title": f"Hammer SL: ₹{c_low:,.1f}"}
+                        ],
+                        "markers": [
+                            {"time": cls._get_candle_time(df, -1), "position": "belowBar", "color": "#00E676", "shape": "arrowUp", "text": "Bullish Hammer"}
+                        ]
+                    }
                 })
             # Shooting Star (Bearish at resistance)
             elif upper_wick >= body * 2.0 and lower_wick <= body * 0.5:
@@ -556,7 +999,17 @@ class PatternEngine:
                     "invalidation_level": round(c_high, 2),
                     "trigger_price": round(c_close, 2),
                     "confidence": 80,
-                    "description": f"Long upper shadow ({upper_wick:.1f} pts) shows intense rejection of higher prices."
+                    "description": f"Long upper shadow ({upper_wick:.1f} pts) shows intense rejection of higher prices.",
+                    "drawing_data": {
+                        "pattern_name": "Shooting Star / Bearish Pin Bar",
+                        "lines": [],
+                        "price_lines": [
+                            {"price": round(c_high, 2), "color": "#FF1744", "lineWidth": 1, "lineStyle": 2, "axisLabelVisible": True, "title": f"Shooting Star SL: ₹{c_high:,.1f}"}
+                        ],
+                        "markers": [
+                            {"time": cls._get_candle_time(df, -1), "position": "aboveBar", "color": "#FF1744", "shape": "arrowDown", "text": "Shooting Star"}
+                        ]
+                    }
                 })
 
         # Higher Highs / Higher Lows Trend Structure
@@ -569,6 +1022,10 @@ class PatternEngine:
 
             if is_uptrend and "ema_9" in df.columns and "ema_21" in df.columns:
                 if float(curr_c["ema_9"]) > float(curr_c["ema_21"]):
+                    t_sub_start = cls._get_candle_time(df, -8)
+                    t_sub_end = cls._get_candle_time(df, -1)
+                    low_start = float(sub["low"].iloc[0])
+                    low_end = float(sub["low"].iloc[-1])
                     result["bullish"].append({
                         "pattern_name": "Ascending Higher-High Structure",
                         "category": "BULLISH",
@@ -578,10 +1035,36 @@ class PatternEngine:
                         "invalidation_level": round(float(sub["low"].min()), 2),
                         "trigger_price": round(c_close, 2),
                         "confidence": 82,
-                        "description": f"Sustained upward step progression with 9 EMA above 21 EMA. Healthy bull trend."
+                        "description": f"Sustained upward step progression with 9 EMA above 21 EMA. Healthy bull trend.",
+                        "drawing_data": {
+                            "pattern_name": "Ascending Higher-High Structure",
+                            "lines": [
+                                {
+                                    "title": "Ascending Trendline",
+                                    "color": "#00E676",
+                                    "lineWidth": 2,
+                                    "lineStyle": 0,
+                                    "points": [
+                                        {"time": t_sub_start, "value": round(low_start, 2)},
+                                        {"time": t_sub_end, "value": round(low_end, 2)}
+                                    ]
+                                }
+                            ],
+                            "price_lines": [
+                                {"price": round(float(sub["low"].min()), 2), "color": "#00E676", "lineWidth": 1, "lineStyle": 2, "axisLabelVisible": True, "title": f"Trend Low: ₹{sub['low'].min():,.1f}"}
+                            ],
+                            "markers": [
+                                {"time": t_sub_start, "position": "belowBar", "color": "#00E676", "shape": "circle", "text": "Trend Base"},
+                                {"time": t_sub_end, "position": "belowBar", "color": "#00E676", "shape": "arrowUp", "text": "Higher Low Step"}
+                            ]
+                        }
                     })
             elif is_downtrend and "ema_9" in df.columns and "ema_21" in df.columns:
                 if float(curr_c["ema_9"]) < float(curr_c["ema_21"]):
+                    t_sub_start = cls._get_candle_time(df, -8)
+                    t_sub_end = cls._get_candle_time(df, -1)
+                    high_start = float(sub["high"].iloc[0])
+                    high_end = float(sub["high"].iloc[-1])
                     result["bearish"].append({
                         "pattern_name": "Descending Lower-Low Structure",
                         "category": "BEARISH",
@@ -591,7 +1074,29 @@ class PatternEngine:
                         "invalidation_level": round(float(sub["high"].max()), 2),
                         "trigger_price": round(c_close, 2),
                         "confidence": 82,
-                        "description": f"Consistent downward step progression with 9 EMA below 21 EMA. Bearish channel."
+                        "description": f"Consistent downward step progression with 9 EMA below 21 EMA. Bearish channel.",
+                        "drawing_data": {
+                            "pattern_name": "Descending Lower-Low Structure",
+                            "lines": [
+                                {
+                                    "title": "Descending Trendline",
+                                    "color": "#FF1744",
+                                    "lineWidth": 2,
+                                    "lineStyle": 0,
+                                    "points": [
+                                        {"time": t_sub_start, "value": round(high_start, 2)},
+                                        {"time": t_sub_end, "value": round(high_end, 2)}
+                                    ]
+                                }
+                            ],
+                            "price_lines": [
+                                {"price": round(float(sub["high"].max()), 2), "color": "#FF1744", "lineWidth": 1, "lineStyle": 2, "axisLabelVisible": True, "title": f"Trend High: ₹{sub['high'].max():,.1f}"}
+                            ],
+                            "markers": [
+                                {"time": t_sub_start, "position": "aboveBar", "color": "#FF1744", "shape": "circle", "text": "Channel Top"},
+                                {"time": t_sub_end, "position": "aboveBar", "color": "#FF1744", "shape": "arrowDown", "text": "Lower High Step"}
+                            ]
+                        }
                     })
 
         # Detect Side Wave / Consolidation Patterns
@@ -622,5 +1127,33 @@ class PatternEngine:
             result["regime_color"] = "#FFD600"
             result["regime_score"] = 75 if n_side > 0 else 60
             result["summary"] = "Sideways / consolidation zone. High Theta decay risk for Option Buyers."
+
+        # Select dominant drawing data for chart overlay
+        dominant_drawing = None
+        if result["regime"] == "BULLISH" and result["bullish"]:
+            for p in result["bullish"]:
+                if p.get("drawing_data"):
+                    dominant_drawing = p["drawing_data"]
+                    break
+        elif result["regime"] == "BEARISH" and result["bearish"]:
+            for p in result["bearish"]:
+                if p.get("drawing_data"):
+                    dominant_drawing = p["drawing_data"]
+                    break
+        elif result["side_wave"]:
+            for p in result["side_wave"]:
+                if p.get("drawing_data"):
+                    dominant_drawing = p["drawing_data"]
+                    break
+
+        if not dominant_drawing:
+            all_patterns = result["bullish"] + result["bearish"] + result["side_wave"]
+            for p in all_patterns:
+                if p.get("drawing_data"):
+                    dominant_drawing = p["drawing_data"]
+                    break
+
+        result["drawing_data"] = dominant_drawing
+        result["drawing_pattern_name"] = dominant_drawing.get("pattern_name", "None") if dominant_drawing else None
 
         return result

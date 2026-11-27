@@ -40,6 +40,7 @@ def render_tradingview_confluence_chart(
     symbol: str = "NIFTY",
     interval: str = "5m",
     trade_plan: Optional[Dict[str, Any]] = None,
+    pattern_drawings: Optional[Dict[str, Any]] = None,
     show_sr: bool = True,
     show_cpr: bool = True,
     show_pdh_pdl: bool = True,
@@ -294,10 +295,67 @@ def render_tradingview_confluence_chart(
                         "title": f"SUPP: ₹{lvl:,.1f}"
                     })
 
+    # Process Automatic Pattern Drawings (Geometry Lines, Necklines & Markers)
+    pattern_lines: List[Dict[str, Any]] = []
+    if pattern_drawings and isinstance(pattern_drawings, dict):
+        for line in pattern_drawings.get("lines", []):
+            pts = line.get("points", [])
+            valid_pts = []
+            seen_p_times = set()
+            for pt in pts:
+                pt_t = pt.get("time")
+                pt_val = pt.get("value")
+                if pt_t and pt_val is not None and pt_t not in seen_p_times:
+                    seen_p_times.add(pt_t)
+                    valid_pts.append({"time": int(pt_t), "value": float(pt_val)})
+            valid_pts.sort(key=lambda x: x["time"])
+            if len(valid_pts) >= 2:
+                pattern_lines.append({
+                    "title": line.get("title", "Pattern"),
+                    "color": line.get("color", "#FFD600"),
+                    "lineWidth": line.get("lineWidth", 2),
+                    "lineStyle": line.get("lineStyle", 0),
+                    "points": valid_pts
+                })
+
+        for pl in pattern_drawings.get("price_lines", []):
+            lvl = float(pl.get("price", 0.0))
+            if lvl > 0:
+                price_lines.append({
+                    "price": lvl,
+                    "color": pl.get("color", "#FFD600"),
+                    "lineWidth": pl.get("lineWidth", 2),
+                    "lineStyle": pl.get("lineStyle", 0),
+                    "axisLabelVisible": pl.get("axisLabelVisible", True),
+                    "title": pl.get("title", "Pattern Level")
+                })
+
+        for mk in pattern_drawings.get("markers", []):
+            markers.append({
+                "time": int(mk.get("time")),
+                "position": mk.get("position", "aboveBar"),
+                "color": mk.get("color", "#FFD600"),
+                "shape": mk.get("shape", "circle"),
+                "text": mk.get("text", "")
+            })
+
+    # Deduplicate and sort markers by time strictly ascending
+    if markers:
+        # Keep unique (time, text) combinations
+        seen_mk = set()
+        clean_markers = []
+        for m in sorted(markers, key=lambda x: x["time"]):
+            key = (m["time"], m.get("text", ""))
+            if key not in seen_mk:
+                seen_mk.add(key)
+                clean_markers.append(m)
+        markers = clean_markers
+
     candles_json = json.dumps(candle_records)
     volumes_json = json.dumps(volume_records)
     price_lines_json = json.dumps(price_lines)
     markers_json = json.dumps(markers)
+    pattern_lines_json = json.dumps(pattern_lines)
 
     html_code = f"""
     <!DOCTYPE html>
@@ -459,7 +517,25 @@ def render_tradingview_confluence_chart(
                 }});
             }});
 
-            // Add Signal Arrow Markers
+            // Add Dynamic Pattern Drawing Lines (M, W, Flag Pole/Channel, Trendlines)
+            const patternLines = {pattern_lines_json};
+            patternLines.forEach(pl => {{
+                try {{
+                    const lineSeries = chart.addLineSeries({{
+                        color: pl.color || '#FFD600',
+                        lineWidth: pl.lineWidth || 2,
+                        lineStyle: pl.lineStyle !== undefined ? pl.lineStyle : 0,
+                        priceLineVisible: false,
+                        lastValueVisible: false,
+                        crosshairMarkerVisible: true
+                    }});
+                    lineSeries.setData(pl.points);
+                }} catch (e) {{
+                    console.error("Error drawing pattern line:", e);
+                }}
+            }});
+
+            // Add Signal Arrow & Pattern Markers
             const markers = {markers_json};
             if (markers.length > 0) {{
                 candleSeries.setMarkers(markers);
@@ -498,6 +574,7 @@ def render_angel_one_smartapi_chart(
     symbol: str = "NIFTY",
     interval: str = "5m",
     trade_plan: Optional[Dict[str, Any]] = None,
+    pattern_drawings: Optional[Dict[str, Any]] = None,
     show_sr: bool = False,
     show_cpr: bool = False,
     show_pdh_pdl: bool = False,
@@ -505,13 +582,15 @@ def render_angel_one_smartapi_chart(
     height: int = 480
 ):
     """
-    Renders pure, plain Angel One SmartAPI chart (or optional overlays) using native TradingView Lightweight Charts engine.
+    Renders pure, plain Angel One SmartAPI chart with optional automatic pattern drawings
+    using native TradingView Lightweight Charts engine.
     """
     render_tradingview_confluence_chart(
         df=df,
         symbol=symbol,
         interval=interval,
         trade_plan=trade_plan,
+        pattern_drawings=pattern_drawings,
         show_sr=show_sr,
         show_cpr=show_cpr,
         show_pdh_pdl=show_pdh_pdl,

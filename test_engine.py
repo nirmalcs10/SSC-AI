@@ -135,14 +135,38 @@ def run_tests():
     for tf_key in ["5m", "1h"]:
         tf_data = p_mat[tf_key]
         assert "regime" in tf_data and "bullish" in tf_data and "bearish" in tf_data and "side_wave" in tf_data
-        print(f"Verified {tf_key} Pattern Matrix: Regime={tf_data['regime']} (Bullish: {len(tf_data['bullish'])}, Bearish: {len(tf_data['bearish'])}, Side Wave: {len(tf_data['side_wave'])})")
+        assert "drawing_data" in tf_data, f"{tf_key} must contain drawing_data"
+        p_name = tf_data.get("drawing_pattern_name", "None")
+        print(f"Verified {tf_key} Pattern Matrix: Regime={tf_data['regime']} (Bullish: {len(tf_data['bullish'])}, Bearish: {len(tf_data['bearish'])}, Side Wave: {len(tf_data['side_wave'])}) | Auto-Drawn Pattern: {p_name}")
 
     from angel_chart_mirror import render_angel_one_smartapi_chart
     df_1h_test = plan.get("df_1h") if plan.get("df_1h") is not None else mtf_data.get("1h")
     assert df_1h_test is not None and not df_1h_test.empty, "df_1h must be generated and available"
-    render_angel_one_smartapi_chart(df=mtf_data["5m"], symbol="NIFTY", interval="5m", trade_plan=plan, show_sr=False, show_cpr=False, show_pdh_pdl=False, show_trade_overlay=False, height=460)
-    render_angel_one_smartapi_chart(df=df_1h_test, symbol="NIFTY", interval="1h", trade_plan=plan, show_sr=False, show_cpr=False, show_pdh_pdl=False, show_trade_overlay=False, height=460)
-    print("Verified Plain Angel One SmartAPI Feed (No Support, Resistance, CPR) generated cleanly for 5m & 1h!")
+    render_angel_one_smartapi_chart(
+        df=mtf_data["5m"],
+        symbol="NIFTY",
+        interval="5m",
+        trade_plan=plan,
+        pattern_drawings=p_mat["5m"].get("drawing_data"),
+        show_sr=False,
+        show_cpr=False,
+        show_pdh_pdl=False,
+        show_trade_overlay=False,
+        height=460
+    )
+    render_angel_one_smartapi_chart(
+        df=df_1h_test,
+        symbol="NIFTY",
+        interval="1h",
+        trade_plan=plan,
+        pattern_drawings=p_mat["1h"].get("drawing_data"),
+        show_sr=False,
+        show_cpr=False,
+        show_pdh_pdl=False,
+        show_trade_overlay=False,
+        height=460
+    )
+    print("Verified Plain Angel One SmartAPI Feed with Automatic Pattern Drawings generated cleanly for 5m & 1h!")
 
     print("\n=== Step 5: Testing Institutional Risk Management Guard (Pillar 4) ===")
     test_wallet_file = Path(__file__).resolve().parent / "data" / "test_risk_wallet_final.json"

@@ -416,13 +416,27 @@ if plan:
                 </div>
                 """, unsafe_allow_html=True)
 
-            # Embedded Plain TradingView Chart (No Support, Resistance, CPR or Overlays)
+            # Auto-drawn pattern indicator badge
+            p_drawings = p_data.get("drawing_data")
+            p_draw_name = p_data.get("drawing_pattern_name")
+            if p_drawings and p_draw_name:
+                st.markdown(f"""
+                <div style="background: rgba(0, 229, 255, 0.08); border: 1px solid #00E5FF; border-radius: 4px; padding: 5px 10px; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between;">
+                    <span style="font-size: 11px; font-weight: bold; color: #00E5FF;">
+                        📐 Auto-Drawn Pattern: <strong>{p_draw_name}</strong>
+                    </span>
+                    <span style="font-size: 10px; color: #8B949E;">TradingView Chart Overlay Active</span>
+                </div>
+                """, unsafe_allow_html=True)
+
+            # Embedded TradingView Chart with Auto-Drawn Pattern (No Support, Resistance, CPR or Trade Overlays)
             if chart_df is not None and not chart_df.empty:
                 render_angel_one_smartapi_chart(
                     df=chart_df,
                     symbol=selected_symbol,
                     interval=tf_code,
                     trade_plan=plan,
+                    pattern_drawings=p_drawings,
                     show_sr=False,
                     show_cpr=False,
                     show_pdh_pdl=False,
