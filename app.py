@@ -416,28 +416,19 @@ if plan:
                 </div>
                 """, unsafe_allow_html=True)
 
-            # Embedded Interactive Candlestick Chart (TradingView / Angel One Style)
+            # Embedded TradingView Chart (Angel One SmartAPI Feed • No Restrictions)
             if chart_df is not None and not chart_df.empty:
-                st.markdown(f"<div style='margin-top: 8px; margin-bottom: 4px;'><span style='color: #00E5FF; font-weight: bold; font-size: 12px;'>📊 {tf_code.upper()} Interactive Candlestick Chart</span></div>", unsafe_allow_html=True)
-                fig_sub = ChartPlotter.create_trade_chart(
+                render_angel_one_smartapi_chart(
                     df=chart_df,
+                    symbol=selected_symbol,
+                    interval=tf_code,
                     trade_plan=plan,
-                    timeframe=tf_code,
                     show_sr=show_sr,
                     show_cpr=show_cpr,
                     show_pdh_pdl=show_pdh_pdl,
-                    show_fvg=show_fvg,
                     show_trade_overlay=show_trade_overlay,
-                    height=360,
-                    is_grid_compact=True
+                    height=460
                 )
-                why_cfg = {
-                    "scrollZoom": True,
-                    "displayModeBar": True,
-                    "responsive": True,
-                    "modeBarButtonsToAdd": ["drawline", "drawopenpath", "eraseshape"]
-                }
-                st.plotly_chart(fig_sub, use_container_width=True, config=why_cfg, key=f"why_chart_{tf_code}")
 
         with pat_col1:
             render_pattern_box(p_5m, "⏱️ 5-Minute Chart Pattern Setup (Intraday)", chart_df=df_5m_chart, tf_code="5m")

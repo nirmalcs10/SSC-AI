@@ -30,7 +30,8 @@ TV_INTERVAL_MAP = {
     "1m": "1",
     "3m": "3",
     "5m": "5",
-    "15m": "15"
+    "15m": "15",
+    "1h": "60"
 }
 
 
@@ -62,11 +63,15 @@ def render_tradingview_confluence_chart(
     
     candle_records = []
     volume_records = []
+    seen_times = set()
 
     for _, row in clean_df.iterrows():
         try:
             dt = row["datetime"]
             t = int(pd.Timestamp(dt).timestamp())
+            if t in seen_times:
+                continue
+            seen_times.add(t)
             o = float(row["open"])
             h = float(row["high"])
             l = float(row["low"])
@@ -493,20 +498,24 @@ def render_angel_one_smartapi_chart(
     symbol: str = "NIFTY",
     interval: str = "5m",
     trade_plan: Optional[Dict[str, Any]] = None,
-    height: int = 650
+    show_sr: bool = False,
+    show_cpr: bool = False,
+    show_pdh_pdl: bool = False,
+    show_trade_overlay: bool = True,
+    height: int = 480
 ):
     """
-    Renders pure Angel One SmartAPI chart with Trade Box.
+    Renders pure Angel One SmartAPI chart with Trade Box using native TradingView Lightweight Charts engine.
     """
     render_tradingview_confluence_chart(
         df=df,
         symbol=symbol,
         interval=interval,
         trade_plan=trade_plan,
-        show_sr=False,
-        show_cpr=False,
-        show_pdh_pdl=False,
-        show_trade_overlay=True,
+        show_sr=show_sr,
+        show_cpr=show_cpr,
+        show_pdh_pdl=show_pdh_pdl,
+        show_trade_overlay=show_trade_overlay,
         height=height
     )
 
