@@ -654,6 +654,612 @@ class PatternEngine:
         return None
 
     @classmethod
+    def detect_triple_taps_strategy(cls, df: pd.DataFrame) -> Optional[Dict[str, Any]]:
+        """
+        Detects Tamil Crypto School (TCS) Triple Taps Strategy:
+        - Price touches a key trendline/support 3 times (Tap 1, Tap 2, Tap 3).
+        - 3rd tap triggers rapid momentum acceleration.
+        - Fibonacci golden section (38.2%, 50%, 61.8%) confluence on 3rd tap.
+        """
+        if df is None or len(df) < 18:
+            return None
+
+        sub_df = df.iloc[-25:] if len(df) >= 25 else df
+        lows = sub_df["low"].values
+        highs = sub_df["high"].values
+        curr_c = sub_df.iloc[-1]
+        c_close = float(curr_c["close"])
+        offset = len(df) - len(sub_df)
+
+        # 1. Bullish Triple Taps on Ascending Support Trendline
+        min_indices = [i for i in range(1, len(lows)-1) if lows[i] < lows[i-1] and lows[i] < lows[i+1]]
+        if len(min_indices) >= 3:
+            i1, i2, i3 = min_indices[-3], min_indices[-2], min_indices[-1]
+            if (i2 - i1) >= 2 and (i3 - i2) >= 2 and (len(lows) - 1 - i3) <= 2:
+                l1, l2, l3 = float(lows[i1]), float(lows[i2]), float(lows[i3])
+                if l1 < l2 < l3:  # Ascending lows P1 < P2 < P3
+                    slope = (l3 - l1) / max(i3 - i1, 1)
+                    expected_l2 = l1 + slope * (i2 - i1)
+                    if abs(l2 - expected_l2) / l2 <= 0.005:  # Valid trendline linearity
+                        if c_close >= l3:
+                            impulse_high = float(highs[i1:i3].max())
+                            impulse_range = max(impulse_high - l1, 1.0)
+                            fib_retrace = ((impulse_high - l3) / impulse_range) * 100.0
+                            fib_tag = f"Fib {fib_retrace:.1f}% Golden Zone" if (35.0 <= fib_retrace <= 68.0) else "Trendline Tap 3"
+
+                            t1 = cls._get_candle_time(df, offset + i1)
+                            t2 = cls._get_candle_time(df, offset + i2)
+                            t3 = cls._get_candle_time(df, offset + i3)
+                            t_curr = cls._get_candle_time(df, -1)
+
+                            target_100 = round(impulse_high, 2)
+                            target_1618 = round(l3 + (impulse_range * 1.618), 2)
+
+                            return {
+                                "pattern_name": f"Triple Taps Strategy (Bullish Tap 3 • {fib_tag})",
+                                "tier": "TIER_1_OPTIMAL",
+                                "direction": "BUY",
+                                "recommended_option": "CE (Call Option)",
+                                "invalidation_level": round(l3 - (abs(c_close - l3) * 0.4), 2),
+                                "trigger_price": round(c_close, 2),
+                                "confidence": 94 if (35.0 <= fib_retrace <= 68.0) else 89,
+                                "description": f"Master TCS Strategy: 3rd Price Tap confirmed on ascending support (₹{l1:,.1f} -> ₹{l2:,.1f} -> ₹{l3:,.1f}). Golden section confluence ({fib_retrace:.1f}%). 3rd tap triggers rapid institutional trend acceleration toward ₹{target_1618:,.1f}.",
+                                "drawing_data": {
+                                    "pattern_name": "Triple Taps Strategy (Bullish Tap 3)",
+                                    "lines": [
+                                        {
+                                            "title": "Ascending Support Line",
+                                            "color": "#FFFFFF",
+                                            "lineWidth": 2,
+                                            "lineStyle": 0,
+                                            "points": [
+                                                {"time": t1, "value": round(l1, 2)},
+                                                {"time": t2, "value": round(l2, 2)},
+                                                {"time": t3, "value": round(l3, 2)},
+                                                {"time": t_curr, "value": round(c_close, 2)}
+                                            ]
+                                        }
+                                    ],
+                                    "price_lines": [
+                                        {"price": target_100, "color": "#FFFFFF", "lineWidth": 1, "lineStyle": 2, "axisLabelVisible": True, "title": f"Fib 100% Target: ₹{target_100:,.1f}"},
+                                        {"price": target_1618, "color": "#FFFFFF", "lineWidth": 2, "lineStyle": 0, "axisLabelVisible": True, "title": f"Fib 161.8% Acceleration: ₹{target_1618:,.1f}"}
+                                    ],
+                                    "markers": [
+                                        {"time": t1, "position": "belowBar", "color": "#FFFFFF", "shape": "circle", "text": f"Tap 1 (₹{l1:,.1f})"},
+                                        {"time": t2, "position": "belowBar", "color": "#FFFFFF", "shape": "circle", "text": f"Tap 2 (₹{l2:,.1f})"},
+                                        {"time": t3, "position": "belowBar", "color": "#00E676", "shape": "arrowUp", "text": f"Tap 3 Trigger ({fib_tag}) @ ₹{l3:,.1f}"}
+                                    ]
+                                }
+                            }
+
+        # 2. Bearish Triple Taps on Descending Resistance Line
+        max_indices = [i for i in range(1, len(highs)-1) if highs[i] > highs[i-1] and highs[i] > highs[i+1]]
+        if len(max_indices) >= 3:
+            i1, i2, i3 = max_indices[-3], max_indices[-2], max_indices[-1]
+            if (i2 - i1) >= 2 and (i3 - i2) >= 2 and (len(highs) - 1 - i3) <= 2:
+                h1, h2, h3 = float(highs[i1]), float(highs[i2]), float(highs[i3])
+                if h1 > h2 > h3:  # Descending peaks P1 > P2 > P3
+                    slope = (h3 - h1) / max(i3 - i1, 1)
+                    expected_h2 = h1 + slope * (i2 - i1)
+                    if abs(h2 - expected_h2) / h2 <= 0.005:
+                        if c_close <= h3:
+                            impulse_low = float(lows[i1:i3].min())
+                            impulse_range = max(h1 - impulse_low, 1.0)
+                            fib_retrace = ((h3 - impulse_low) / impulse_range) * 100.0
+                            fib_tag = f"Fib {fib_retrace:.1f}% Golden Zone" if (35.0 <= fib_retrace <= 68.0) else "Resistance Tap 3"
+
+                            t1 = cls._get_candle_time(df, offset + i1)
+                            t2 = cls._get_candle_time(df, offset + i2)
+                            t3 = cls._get_candle_time(df, offset + i3)
+                            t_curr = cls._get_candle_time(df, -1)
+
+                            target_100 = round(impulse_low, 2)
+                            target_1618 = round(h3 - (impulse_range * 1.618), 2)
+
+                            return {
+                                "pattern_name": f"Triple Taps Strategy (Bearish Tap 3 • {fib_tag})",
+                                "tier": "TIER_1_OPTIMAL",
+                                "direction": "SELL",
+                                "recommended_option": "PE (Put Option)",
+                                "invalidation_level": round(h3 + (abs(h3 - c_close) * 0.4), 2),
+                                "trigger_price": round(c_close, 2),
+                                "confidence": 94 if (35.0 <= fib_retrace <= 68.0) else 89,
+                                "description": f"Master TCS Strategy: 3rd Price Tap confirmed on descending resistance (₹{h1:,.1f} -> ₹{h2:,.1f} -> ₹{h3:,.1f}). Golden section confluence ({fib_retrace:.1f}%). 3rd tap triggers rapid downward acceleration toward ₹{target_1618:,.1f}.",
+                                "drawing_data": {
+                                    "pattern_name": "Triple Taps Strategy (Bearish Tap 3)",
+                                    "lines": [
+                                        {
+                                            "title": "Descending Resistance Line",
+                                            "color": "#FFFFFF",
+                                            "lineWidth": 2,
+                                            "lineStyle": 0,
+                                            "points": [
+                                                {"time": t1, "value": round(h1, 2)},
+                                                {"time": t2, "value": round(h2, 2)},
+                                                {"time": t3, "value": round(h3, 2)},
+                                                {"time": t_curr, "value": round(c_close, 2)}
+                                            ]
+                                        }
+                                    ],
+                                    "price_lines": [
+                                        {"price": target_100, "color": "#FFFFFF", "lineWidth": 1, "lineStyle": 2, "axisLabelVisible": True, "title": f"Fib 100% Target: ₹{target_100:,.1f}"},
+                                        {"price": target_1618, "color": "#FFFFFF", "lineWidth": 2, "lineStyle": 0, "axisLabelVisible": True, "title": f"Fib 161.8% Acceleration: ₹{target_1618:,.1f}"}
+                                    ],
+                                    "markers": [
+                                        {"time": t1, "position": "aboveBar", "color": "#FFFFFF", "shape": "circle", "text": f"Tap 1 (₹{h1:,.1f})"},
+                                        {"time": t2, "position": "aboveBar", "color": "#FFFFFF", "shape": "circle", "text": f"Tap 2 (₹{h2:,.1f})"},
+                                        {"time": t3, "position": "aboveBar", "color": "#FF1744", "shape": "arrowDown", "text": f"Tap 3 Trigger ({fib_tag}) @ ₹{h3:,.1f}"}
+                                    ]
+                                }
+                            }
+        return None
+
+    @classmethod
+    def detect_head_and_shoulders(cls, df: pd.DataFrame) -> Optional[Dict[str, Any]]:
+        """
+        Detects Head and Shoulders (Bearish) and Inverse Head and Shoulders (Bullish):
+        - Baseline with 3 peaks: Left Shoulder, highest Head, Right Shoulder.
+        - Neckline break confirms reversal.
+        """
+        if df is None or len(df) < 20:
+            return None
+
+        sub_df = df.iloc[-25:] if len(df) >= 25 else df
+        highs = sub_df["high"].values
+        lows = sub_df["low"].values
+        curr_c = sub_df.iloc[-1]
+        c_close = float(curr_c["close"])
+        offset = len(df) - len(sub_df)
+
+        # 1. Bearish Head & Shoulders
+        max_idx = [i for i in range(1, len(highs)-1) if highs[i] > highs[i-1] and highs[i] >= highs[i+1]]
+        if len(max_idx) >= 3:
+            s1_idx, h_idx, s2_idx = max_idx[-3], max_idx[-2], max_idx[-1]
+            if (h_idx - s1_idx) >= 2 and (s2_idx - h_idx) >= 2:
+                sh1, head, sh2 = float(highs[s1_idx]), float(highs[h_idx]), float(highs[s2_idx])
+                # Head must be highest, shoulders roughly symmetrical within 0.5%
+                if head > sh1 and head > sh2 and abs(sh1 - sh2) / sh1 <= 0.005:
+                    neckline = float(lows[s1_idx:s2_idx+1].min())
+                    if c_close < neckline:  # Breakdown confirmation
+                        t_s1 = cls._get_candle_time(df, offset + s1_idx)
+                        t_head = cls._get_candle_time(df, offset + h_idx)
+                        t_s2 = cls._get_candle_time(df, offset + s2_idx)
+                        t_break = cls._get_candle_time(df, -1)
+
+                        return {
+                            "pattern_name": "Head and Shoulders (Bearish Reversal)",
+                            "tier": "TIER_1_OPTIMAL",
+                            "direction": "SELL",
+                            "recommended_option": "PE (Put Option)",
+                            "invalidation_level": round(sh2, 2),
+                            "trigger_price": round(c_close, 2),
+                            "confidence": 91,
+                            "description": f"Master TCS Pattern: Head & Shoulders confirmed. Left Shoulder (₹{sh1:,.1f}), Head (₹{head:,.1f}), Right Shoulder (₹{sh2:,.1f}). Decisive breakdown below Neckline (₹{neckline:,.1f}).",
+                            "drawing_data": {
+                                "pattern_name": "Head and Shoulders (Bearish)",
+                                "lines": [
+                                    {
+                                        "title": "H&S Structure",
+                                        "color": "#FFFFFF",
+                                        "lineWidth": 2,
+                                        "lineStyle": 0,
+                                        "points": [
+                                            {"time": t_s1, "value": round(sh1, 2)},
+                                            {"time": t_head, "value": round(head, 2)},
+                                            {"time": t_s2, "value": round(sh2, 2)},
+                                            {"time": t_break, "value": round(c_close, 2)}
+                                        ]
+                                    }
+                                ],
+                                "price_lines": [
+                                    {"price": round(neckline, 2), "color": "#FFFFFF", "lineWidth": 2, "lineStyle": 0, "axisLabelVisible": True, "title": f"H&S Neckline: ₹{neckline:,.1f}"}
+                                ],
+                                "markers": [
+                                    {"time": t_s1, "position": "aboveBar", "color": "#FFFFFF", "shape": "circle", "text": f"Left Shoulder (₹{sh1:,.1f})"},
+                                    {"time": t_head, "position": "aboveBar", "color": "#FFFFFF", "shape": "circle", "text": f"Head (₹{head:,.1f})"},
+                                    {"time": t_s2, "position": "aboveBar", "color": "#FFFFFF", "shape": "circle", "text": f"Right Shoulder (₹{sh2:,.1f})"},
+                                    {"time": t_break, "position": "aboveBar", "color": "#FF1744", "shape": "arrowDown", "text": f"Neckline Breakdown @ ₹{c_close:,.1f}"}
+                                ]
+                            }
+                        }
+
+        # 2. Bullish Inverse Head & Shoulders
+        min_idx = [i for i in range(1, len(lows)-1) if lows[i] < lows[i-1] and lows[i] <= lows[i+1]]
+        if len(min_idx) >= 3:
+            s1_idx, h_idx, s2_idx = min_idx[-3], min_idx[-2], min_idx[-1]
+            if (h_idx - s1_idx) >= 2 and (s2_idx - h_idx) >= 2:
+                sh1, head, sh2 = float(lows[s1_idx]), float(lows[h_idx]), float(lows[s2_idx])
+                if head < sh1 and head < sh2 and abs(sh1 - sh2) / sh1 <= 0.005:
+                    neckline = float(highs[s1_idx:s2_idx+1].max())
+                    if c_close > neckline:  # Breakout confirmation
+                        t_s1 = cls._get_candle_time(df, offset + s1_idx)
+                        t_head = cls._get_candle_time(df, offset + h_idx)
+                        t_s2 = cls._get_candle_time(df, offset + s2_idx)
+                        t_break = cls._get_candle_time(df, -1)
+
+                        return {
+                            "pattern_name": "Inverse Head and Shoulders (Bullish Reversal)",
+                            "tier": "TIER_1_OPTIMAL",
+                            "direction": "BUY",
+                            "recommended_option": "CE (Call Option)",
+                            "invalidation_level": round(sh2, 2),
+                            "trigger_price": round(c_close, 2),
+                            "confidence": 91,
+                            "description": f"Master TCS Pattern: Inverse Head & Shoulders confirmed. Left Shoulder (₹{sh1:,.1f}), Inverted Head (₹{head:,.1f}), Right Shoulder (₹{sh2:,.1f}). Decisive breakout above Neckline (₹{neckline:,.1f}).",
+                            "drawing_data": {
+                                "pattern_name": "Inverse Head and Shoulders (Bullish)",
+                                "lines": [
+                                    {
+                                        "title": "Inv H&S Structure",
+                                        "color": "#FFFFFF",
+                                        "lineWidth": 2,
+                                        "lineStyle": 0,
+                                        "points": [
+                                            {"time": t_s1, "value": round(sh1, 2)},
+                                            {"time": t_head, "value": round(head, 2)},
+                                            {"time": t_s2, "value": round(sh2, 2)},
+                                            {"time": t_break, "value": round(c_close, 2)}
+                                        ]
+                                    }
+                                ],
+                                "price_lines": [
+                                    {"price": round(neckline, 2), "color": "#FFFFFF", "lineWidth": 2, "lineStyle": 0, "axisLabelVisible": True, "title": f"Inv H&S Neckline: ₹{neckline:,.1f}"}
+                                ],
+                                "markers": [
+                                    {"time": t_s1, "position": "belowBar", "color": "#FFFFFF", "shape": "circle", "text": f"Left Shoulder (₹{sh1:,.1f})"},
+                                    {"time": t_head, "position": "belowBar", "color": "#FFFFFF", "shape": "circle", "text": f"Head (₹{head:,.1f})"},
+                                    {"time": t_s2, "position": "belowBar", "color": "#FFFFFF", "shape": "circle", "text": f"Right Shoulder (₹{sh2:,.1f})"},
+                                    {"time": t_break, "position": "belowBar", "color": "#00E676", "shape": "arrowUp", "text": f"Neckline Breakout @ ₹{c_close:,.1f}"}
+                                ]
+                            }
+                        }
+        return None
+
+    @classmethod
+    def detect_triple_top_bottom(cls, df: pd.DataFrame) -> Optional[Dict[str, Any]]:
+        """
+        Detects Triple Top & Triple Bottom Patterns (Document 3):
+        - 3 peaks or bottoms at nearly the same price level.
+        - Confirmed by breakout of horizontal neckline.
+        """
+        if df is None or len(df) < 20:
+            return None
+
+        sub_df = df.iloc[-25:] if len(df) >= 25 else df
+        highs = sub_df["high"].values
+        lows = sub_df["low"].values
+        curr_c = sub_df.iloc[-1]
+        c_close = float(curr_c["close"])
+        offset = len(df) - len(sub_df)
+
+        # 1. Bearish Triple Top
+        max_idx = [i for i in range(1, len(highs)-1) if highs[i] > highs[i-1] and highs[i] >= highs[i+1]]
+        if len(max_idx) >= 3:
+            p1, p2, p3 = max_idx[-3], max_idx[-2], max_idx[-1]
+            if (p2 - p1) >= 2 and (p3 - p2) >= 2:
+                h1, h2, h3 = float(highs[p1]), float(highs[p2]), float(highs[p3])
+                max_h = max(h1, h2, h3)
+                min_h = min(h1, h2, h3)
+                if (max_h - min_h) / max_h <= 0.0035:  # Within 0.35%
+                    neckline = float(lows[p1:p3+1].min())
+                    if c_close < neckline:
+                        t1 = cls._get_candle_time(df, offset + p1)
+                        t2 = cls._get_candle_time(df, offset + p2)
+                        t3 = cls._get_candle_time(df, offset + p3)
+                        t_break = cls._get_candle_time(df, -1)
+                        return {
+                            "pattern_name": "Triple Top (Bearish Reversal)",
+                            "tier": "TIER_1_OPTIMAL",
+                            "direction": "SELL",
+                            "recommended_option": "PE (Put Option)",
+                            "invalidation_level": round(max_h, 2),
+                            "trigger_price": round(c_close, 2),
+                            "confidence": 90,
+                            "description": f"Master TCS Pattern: Triple Top confirmed at ₹{max_h:,.1f}. 3 rejections at resistance followed by Neckline breakdown below ₹{neckline:,.1f}.",
+                            "drawing_data": {
+                                "pattern_name": "Triple Top (Bearish)",
+                                "lines": [
+                                    {
+                                        "title": "Triple Top Resistance",
+                                        "color": "#FFFFFF",
+                                        "lineWidth": 2,
+                                        "lineStyle": 0,
+                                        "points": [
+                                            {"time": t1, "value": round(h1, 2)},
+                                            {"time": t2, "value": round(h2, 2)},
+                                            {"time": t3, "value": round(h3, 2)},
+                                            {"time": t_break, "value": round(c_close, 2)}
+                                        ]
+                                    }
+                                ],
+                                "price_lines": [
+                                    {"price": round(neckline, 2), "color": "#FFFFFF", "lineWidth": 2, "lineStyle": 0, "axisLabelVisible": True, "title": f"Triple Top Neckline: ₹{neckline:,.1f}"}
+                                ],
+                                "markers": [
+                                    {"time": t1, "position": "aboveBar", "color": "#FFFFFF", "shape": "circle", "text": f"Top 1 (₹{h1:,.1f})"},
+                                    {"time": t2, "position": "aboveBar", "color": "#FFFFFF", "shape": "circle", "text": f"Top 2 (₹{h2:,.1f})"},
+                                    {"time": t3, "position": "aboveBar", "color": "#FFFFFF", "shape": "circle", "text": f"Top 3 (₹{h3:,.1f})"},
+                                    {"time": t_break, "position": "aboveBar", "color": "#FF1744", "shape": "arrowDown", "text": f"Breakdown @ ₹{c_close:,.1f}"}
+                                ]
+                            }
+                        }
+
+        # 2. Bullish Triple Bottom
+        min_idx = [i for i in range(1, len(lows)-1) if lows[i] < lows[i-1] and lows[i] <= lows[i+1]]
+        if len(min_idx) >= 3:
+            b1, b2, b3 = min_idx[-3], min_idx[-2], min_idx[-1]
+            if (b2 - b1) >= 2 and (b3 - b2) >= 2:
+                l1, l2, l3 = float(lows[b1]), float(lows[b2]), float(lows[b3])
+                max_l = max(l1, l2, l3)
+                min_l = min(l1, l2, l3)
+                if (max_l - min_l) / min_l <= 0.0035:
+                    neckline = float(highs[b1:b3+1].max())
+                    if c_close > neckline:
+                        t1 = cls._get_candle_time(df, offset + b1)
+                        t2 = cls._get_candle_time(df, offset + b2)
+                        t3 = cls._get_candle_time(df, offset + b3)
+                        t_break = cls._get_candle_time(df, -1)
+                        return {
+                            "pattern_name": "Triple Bottom (Bullish Reversal)",
+                            "tier": "TIER_1_OPTIMAL",
+                            "direction": "BUY",
+                            "recommended_option": "CE (Call Option)",
+                            "invalidation_level": round(min_l, 2),
+                            "trigger_price": round(c_close, 2),
+                            "confidence": 90,
+                            "description": f"Master TCS Pattern: Triple Bottom confirmed at ₹{min_l:,.1f}. 3 bounces off support floor followed by Neckline breakout above ₹{neckline:,.1f}.",
+                            "drawing_data": {
+                                "pattern_name": "Triple Bottom (Bullish)",
+                                "lines": [
+                                    {
+                                        "title": "Triple Bottom Support",
+                                        "color": "#FFFFFF",
+                                        "lineWidth": 2,
+                                        "lineStyle": 0,
+                                        "points": [
+                                            {"time": t1, "value": round(l1, 2)},
+                                            {"time": t2, "value": round(l2, 2)},
+                                            {"time": t3, "value": round(l3, 2)},
+                                            {"time": t_break, "value": round(c_close, 2)}
+                                        ]
+                                    }
+                                ],
+                                "price_lines": [
+                                    {"price": round(neckline, 2), "color": "#FFFFFF", "lineWidth": 2, "lineStyle": 0, "axisLabelVisible": True, "title": f"Triple Bottom Neckline: ₹{neckline:,.1f}"}
+                                ],
+                                "markers": [
+                                    {"time": t1, "position": "belowBar", "color": "#FFFFFF", "shape": "circle", "text": f"Bottom 1 (₹{l1:,.1f})"},
+                                    {"time": t2, "position": "belowBar", "color": "#FFFFFF", "shape": "circle", "text": f"Bottom 2 (₹{l2:,.1f})"},
+                                    {"time": t3, "position": "belowBar", "color": "#FFFFFF", "shape": "circle", "text": f"Bottom 3 (₹{l3:,.1f})"},
+                                    {"time": t_break, "position": "belowBar", "color": "#00E676", "shape": "arrowUp", "text": f"Breakout @ ₹{c_close:,.1f}"}
+                                ]
+                            }
+                        }
+        return None
+
+    @classmethod
+    def detect_wedge_patterns(cls, df: pd.DataFrame) -> Optional[Dict[str, Any]]:
+        """
+        Detects Rising Wedge (Bearish Reversal) & Falling Wedge (Bullish Reversal):
+        - Converging trendlines with contracting volatility.
+        """
+        if df is None or len(df) < 15:
+            return None
+
+        sub_df = df.iloc[-18:]
+        highs = sub_df["high"].values
+        lows = sub_df["low"].values
+        curr_c = sub_df.iloc[-1]
+        c_close = float(curr_c["close"])
+        offset = len(df) - len(sub_df)
+
+        h_start, h_end = float(highs[0]), float(highs[-2])
+        l_start, l_end = float(lows[0]), float(lows[-2])
+
+        # Rising Wedge: Higher highs and higher lows converging (low slope > high slope)
+        if h_end > h_start and l_end > l_start:
+            high_diff = h_end - h_start
+            low_diff = l_end - l_start
+            if low_diff > high_diff * 1.3:  # Converging upward
+                if c_close < l_end:  # Breakdown
+                    t_start = cls._get_candle_time(df, offset)
+                    t_curr = cls._get_candle_time(df, -1)
+                    return {
+                        "pattern_name": "Rising Wedge (Bearish Breakdown)",
+                        "tier": "TIER_1_OPTIMAL",
+                        "direction": "SELL",
+                        "recommended_option": "PE (Put Option)",
+                        "invalidation_level": round(h_end, 2),
+                        "trigger_price": round(c_close, 2),
+                        "confidence": 88,
+                        "description": f"Master TCS Pattern: Rising Wedge breakdown confirmed. Price contracted upward with declining volume. Clean breakdown below lower support at ₹{l_end:,.1f}.",
+                        "drawing_data": {
+                            "pattern_name": "Rising Wedge (Bearish)",
+                            "lines": [
+                                {
+                                    "title": "Wedge Upper Line",
+                                    "color": "#FFFFFF",
+                                    "lineWidth": 2,
+                                    "lineStyle": 2,
+                                    "points": [
+                                        {"time": t_start, "value": round(h_start, 2)},
+                                        {"time": t_curr, "value": round(h_end, 2)}
+                                    ]
+                                },
+                                {
+                                    "title": "Wedge Lower Line",
+                                    "color": "#FFFFFF",
+                                    "lineWidth": 2,
+                                    "lineStyle": 0,
+                                    "points": [
+                                        {"time": t_start, "value": round(l_start, 2)},
+                                        {"time": t_curr, "value": round(c_close, 2)}
+                                    ]
+                                }
+                            ],
+                            "price_lines": [
+                                {"price": round(l_end, 2), "color": "#FFFFFF", "lineWidth": 1, "lineStyle": 2, "axisLabelVisible": True, "title": f"Wedge Breakdown: ₹{l_end:,.1f}"}
+                            ],
+                            "markers": [
+                                {"time": t_start, "position": "aboveBar", "color": "#FFFFFF", "shape": "circle", "text": "Wedge Base"},
+                                {"time": t_curr, "position": "aboveBar", "color": "#FF1744", "shape": "arrowDown", "text": f"Wedge Breakdown @ ₹{c_close:,.1f}"}
+                            ]
+                        }
+                    }
+
+        # Falling Wedge: Lower highs and lower lows converging (high drop > low drop)
+        if h_end < h_start and l_end < l_start:
+            high_drop = h_start - h_end
+            low_drop = l_start - l_end
+            if high_drop > low_drop * 1.3:  # Converging downward
+                if c_close > h_end:  # Breakout
+                    t_start = cls._get_candle_time(df, offset)
+                    t_curr = cls._get_candle_time(df, -1)
+                    return {
+                        "pattern_name": "Falling Wedge (Bullish Breakout)",
+                        "tier": "TIER_1_OPTIMAL",
+                        "direction": "BUY",
+                        "recommended_option": "CE (Call Option)",
+                        "invalidation_level": round(l_end, 2),
+                        "trigger_price": round(c_close, 2),
+                        "confidence": 88,
+                        "description": f"Master TCS Pattern: Falling Wedge breakout confirmed. Sellers lost momentum in contracting range. Clean breakout above resistance at ₹{h_end:,.1f}.",
+                        "drawing_data": {
+                            "pattern_name": "Falling Wedge (Bullish)",
+                            "lines": [
+                                {
+                                    "title": "Wedge Resistance",
+                                    "color": "#FFFFFF",
+                                    "lineWidth": 2,
+                                    "lineStyle": 0,
+                                    "points": [
+                                        {"time": t_start, "value": round(h_start, 2)},
+                                        {"time": t_curr, "value": round(c_close, 2)}
+                                    ]
+                                },
+                                {
+                                    "title": "Wedge Support",
+                                    "color": "#FFFFFF",
+                                    "lineWidth": 2,
+                                    "lineStyle": 2,
+                                    "points": [
+                                        {"time": t_start, "value": round(l_start, 2)},
+                                        {"time": t_curr, "value": round(l_end, 2)}
+                                    ]
+                                }
+                            ],
+                            "price_lines": [
+                                {"price": round(h_end, 2), "color": "#FFFFFF", "lineWidth": 1, "lineStyle": 2, "axisLabelVisible": True, "title": f"Wedge Breakout: ₹{h_end:,.1f}"}
+                            ],
+                            "markers": [
+                                {"time": t_start, "position": "belowBar", "color": "#FFFFFF", "shape": "circle", "text": "Wedge Base"},
+                                {"time": t_curr, "position": "belowBar", "color": "#00E676", "shape": "arrowUp", "text": f"Wedge Breakout @ ₹{c_close:,.1f}"}
+                            ]
+                        }
+                    }
+
+        return None
+
+    @classmethod
+    def detect_role_reversal_sr_flip(cls, df: pd.DataFrame) -> Optional[Dict[str, Any]]:
+        """
+        Detects Role Reversal S/R Flip (Document 5, Page 11):
+        - Previous Resistance becomes Support on retest (Bullish Flip).
+        - Previous Support becomes Resistance on retest (Bearish Flip).
+        """
+        if df is None or len(df) < 15:
+            return None
+
+        recent = df.iloc[-15:]
+        curr_c = recent.iloc[-1]
+        c_close = float(curr_c["close"])
+        c_low = float(curr_c["low"])
+        c_high = float(curr_c["high"])
+        c_open = float(curr_c["open"])
+
+        # Check for Resistance -> Support Flip (Bullish Flip)
+        highs_past = df["high"].iloc[:-3].values
+        for i in range(1, len(highs_past) - 1):
+            if highs_past[i] > highs_past[i-1] and highs_past[i] > highs_past[i+1]:
+                peak = float(highs_past[i])
+                if abs(c_low - peak) / peak <= 0.0035 and c_close >= peak and c_close >= c_open:
+                    t_retest = cls._get_candle_time(df, -1)
+                    t_base = cls._get_candle_time(df, i)
+                    return {
+                        "pattern_name": "S/R Role Reversal (Previous Resistance -> Support Flip)",
+                        "tier": "TIER_1_OPTIMAL",
+                        "direction": "BUY",
+                        "recommended_option": "CE (Call Option)",
+                        "invalidation_level": round(peak - (abs(c_close - c_open) * 0.5), 2),
+                        "trigger_price": round(c_close, 2),
+                        "confidence": 89,
+                        "description": f"Master TCS Principle: Previous Resistance at ₹{peak:,.1f} successfully flipped into strong Support. Tested and confirmed with bullish buyer defense.",
+                        "drawing_data": {
+                            "pattern_name": "S/R Role Reversal (Flip)",
+                            "lines": [
+                                {
+                                    "title": "Flipped Support Line",
+                                    "color": "#FFFFFF",
+                                    "lineWidth": 2,
+                                    "lineStyle": 0,
+                                    "points": [
+                                        {"time": t_base, "value": round(peak, 2)},
+                                        {"time": t_retest, "value": round(peak, 2)}
+                                    ]
+                                }
+                            ],
+                            "price_lines": [
+                                {"price": round(peak, 2), "color": "#FFFFFF", "lineWidth": 2, "lineStyle": 0, "axisLabelVisible": True, "title": f"Flipped Support: ₹{peak:,.1f}"}
+                            ],
+                            "markers": [
+                                {"time": t_retest, "position": "belowBar", "color": "#00E676", "shape": "arrowUp", "text": f"S/R Flip Bounce @ ₹{c_close:,.1f}"}
+                            ]
+                        }
+                    }
+
+        # Check for Support -> Resistance Flip (Bearish Flip)
+        lows_past = df["low"].iloc[:-3].values
+        for i in range(1, len(lows_past) - 1):
+            if lows_past[i] < lows_past[i-1] and lows_past[i] < lows_past[i+1]:
+                trough = float(lows_past[i])
+                if abs(c_high - trough) / trough <= 0.0035 and c_close <= trough and c_close <= c_open:
+                    t_retest = cls._get_candle_time(df, -1)
+                    t_base = cls._get_candle_time(df, i)
+                    return {
+                        "pattern_name": "S/R Role Reversal (Previous Support -> Resistance Flip)",
+                        "tier": "TIER_1_OPTIMAL",
+                        "direction": "SELL",
+                        "recommended_option": "PE (Put Option)",
+                        "invalidation_level": round(trough + (abs(c_close - c_open) * 0.5), 2),
+                        "trigger_price": round(c_close, 2),
+                        "confidence": 89,
+                        "description": f"Master TCS Principle: Previous Support at ₹{trough:,.1f} successfully flipped into strong Resistance. Tested and confirmed with seller rejection.",
+                        "drawing_data": {
+                            "pattern_name": "S/R Role Reversal (Bearish Flip)",
+                            "lines": [
+                                {
+                                    "title": "Flipped Resistance Line",
+                                    "color": "#FFFFFF",
+                                    "lineWidth": 2,
+                                    "lineStyle": 0,
+                                    "points": [
+                                        {"time": t_base, "value": round(trough, 2)},
+                                        {"time": t_retest, "value": round(trough, 2)}
+                                    ]
+                                }
+                            ],
+                            "price_lines": [
+                                {"price": round(trough, 2), "color": "#FFFFFF", "lineWidth": 2, "lineStyle": 0, "axisLabelVisible": True, "title": f"Flipped Resistance: ₹{trough:,.1f}"}
+                            ],
+                            "markers": [
+                                {"time": t_retest, "position": "aboveBar", "color": "#FF1744", "shape": "arrowDown", "text": f"S/R Flip Rejection @ ₹{c_close:,.1f}"}
+                            ]
+                        }
+                    }
+
+        return None
+
+    @classmethod
     def detect_all(
         cls,
         df_5m: pd.DataFrame,
@@ -688,6 +1294,27 @@ class PatternEngine:
         vwap_cross = cls.detect_vwap_crossover(df_5m)
         if vwap_cross:
             detected.append(vwap_cross)
+
+        # TCS Master Pattern Detectors (from Tamil Crypto School curriculum)
+        triple_taps = cls.detect_triple_taps_strategy(ref_df)
+        if triple_taps:
+            detected.append(triple_taps)
+
+        h_and_s = cls.detect_head_and_shoulders(df_5m)
+        if h_and_s:
+            detected.append(h_and_s)
+
+        triple_tb = cls.detect_triple_top_bottom(df_5m)
+        if triple_tb:
+            detected.append(triple_tb)
+
+        wedges = cls.detect_wedge_patterns(df_5m)
+        if wedges:
+            detected.append(wedges)
+
+        sr_flip = cls.detect_role_reversal_sr_flip(df_5m)
+        if sr_flip:
+            detected.append(sr_flip)
 
         # Sort by confidence
         detected.sort(key=lambda x: x["confidence"], reverse=True)
@@ -906,6 +1533,42 @@ class PatternEngine:
                 result["bullish"].append(vwap_cross)
             else:
                 result["bearish"].append(vwap_cross)
+
+        # TCS Master Pattern Detectors (5m and 1h)
+        triple_taps = cls.detect_triple_taps_strategy(df)
+        if triple_taps:
+            if triple_taps["direction"] == "BUY":
+                result["bullish"].append(triple_taps)
+            else:
+                result["bearish"].append(triple_taps)
+
+        h_and_s = cls.detect_head_and_shoulders(df)
+        if h_and_s:
+            if h_and_s["direction"] == "BUY":
+                result["bullish"].append(h_and_s)
+            else:
+                result["bearish"].append(h_and_s)
+
+        triple_tb = cls.detect_triple_top_bottom(df)
+        if triple_tb:
+            if triple_tb["direction"] == "BUY":
+                result["bullish"].append(triple_tb)
+            else:
+                result["bearish"].append(triple_tb)
+
+        wedges = cls.detect_wedge_patterns(df)
+        if wedges:
+            if wedges["direction"] == "BUY":
+                result["bullish"].append(wedges)
+            else:
+                result["bearish"].append(wedges)
+
+        sr_flip = cls.detect_role_reversal_sr_flip(df)
+        if sr_flip:
+            if sr_flip["direction"] == "BUY":
+                result["bullish"].append(sr_flip)
+            else:
+                result["bearish"].append(sr_flip)
 
         # Candlestick Reversal Formations
         if len(df) >= 3:

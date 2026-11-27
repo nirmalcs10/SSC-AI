@@ -181,6 +181,113 @@ def run_tests():
     )
     print("Verified Plain Angel One SmartAPI Feed with White Pattern Drawings (5m 24h & 1h 1-Week) generated cleanly!")
 
+    print("\n=== Step 4c: Testing Tamil Crypto School (TCS) Master Patterns Detection ===")
+    import pandas as pd
+    import numpy as np
+
+    # 1. Test Triple Taps Strategy (Ascending Support with 3 taps)
+    dates = pd.date_range("2026-11-27 09:15", periods=25, freq="5min")
+    df_tt = pd.DataFrame({
+        "datetime": dates,
+        "open": [24200.0] * 25,
+        "high": [24300.0] * 25,
+        "low": [24200.0] * 25,
+        "close": [24250.0] * 25,
+        "volume": [1000] * 25
+    })
+    df_tt.loc[5, ["open", "high", "low", "close"]] = [24010, 24020, 24000, 24010]
+    df_tt.loc[12, ["open", "high", "low", "close"]] = [24060, 24070, 24050, 24060]
+    df_tt.loc[19, ["open", "high", "low", "close"]] = [24110, 24120, 24100, 24110]
+    df_tt.loc[20, ["open", "high", "low", "close"]] = [24110, 24130, 24105, 24125]
+    
+    tt_res = PatternEngine.detect_triple_taps_strategy(df_tt.iloc[:21])
+    assert tt_res is not None, "Triple Taps detector should detect 3 ascending taps"
+    assert "Triple Taps" in tt_res["pattern_name"]
+    assert tt_res["direction"] == "BUY"
+    assert tt_res["drawing_data"]["lines"][0]["color"] == "#FFFFFF"
+    print(f"Verified TCS Pattern: {tt_res['pattern_name']} -> Lines All White #FFFFFF")
+
+    # 2. Test Head and Shoulders (Bearish)
+    df_hs = pd.DataFrame({
+        "datetime": dates,
+        "open": [24000.0] * 25,
+        "high": [24050.0] * 25,
+        "low": [23950.0] * 25,
+        "close": [24000.0] * 25,
+        "volume": [1000] * 25
+    })
+    df_hs.loc[6, ["open", "high", "low", "close"]] = [24020, 24100, 24010, 24050]
+    df_hs.loc[12, ["open", "high", "low", "close"]] = [24080, 24200, 24070, 24100]
+    df_hs.loc[18, ["open", "high", "low", "close"]] = [24020, 24100, 24010, 24040]
+    df_hs.loc[21, ["open", "high", "low", "close"]] = [23960, 23970, 23880, 23890]
+
+    hs_res = PatternEngine.detect_head_and_shoulders(df_hs.iloc[:22])
+    assert hs_res is not None, "Head & Shoulders detector should identify bearish H&S breakdown"
+    assert hs_res["direction"] == "SELL"
+    assert hs_res["drawing_data"]["lines"][0]["color"] == "#FFFFFF"
+    print(f"Verified TCS Pattern: {hs_res['pattern_name']} -> Lines All White #FFFFFF")
+
+    # 3. Test Triple Top (Bearish)
+    df_ttop = pd.DataFrame({
+        "datetime": dates,
+        "open": [24000.0] * 25,
+        "high": [24050.0] * 25,
+        "low": [23950.0] * 25,
+        "close": [24000.0] * 25,
+        "volume": [1000] * 25
+    })
+    df_ttop.loc[6, ["open", "high", "low", "close"]] = [24020, 24100, 24010, 24050]
+    df_ttop.loc[12, ["open", "high", "low", "close"]] = [24020, 24100, 24010, 24050]
+    df_ttop.loc[18, ["open", "high", "low", "close"]] = [24020, 24100, 24010, 24050]
+    df_ttop.loc[21, ["open", "high", "low", "close"]] = [23960, 23970, 23880, 23890]
+
+    ttop_res = PatternEngine.detect_triple_top_bottom(df_ttop.iloc[:22])
+    assert ttop_res is not None, "Triple Top detector should detect 3 resistance peaks"
+    assert ttop_res["direction"] == "SELL"
+    assert ttop_res["drawing_data"]["lines"][0]["color"] == "#FFFFFF"
+    print(f"Verified TCS Pattern: {ttop_res['pattern_name']} -> Lines All White #FFFFFF")
+
+    # 4. Test S/R Role Reversal (Resistance -> Support Flip)
+    df_flip = pd.DataFrame({
+        "datetime": dates,
+        "open": [23950.0] * 25,
+        "high": [23980.0] * 25,
+        "low": [23920.0] * 25,
+        "close": [23950.0] * 25,
+        "volume": [1000] * 25
+    })
+    df_flip.loc[5, ["open", "high", "low", "close"]] = [23960, 24000, 23950, 23990]
+    for k in range(12, 24):
+        df_flip.loc[k, ["open", "high", "low", "close"]] = [24050, 24100, 24020, 24060]
+    df_flip.loc[24, ["open", "high", "low", "close"]] = [24005, 24030, 24000, 24025]
+
+    flip_res = PatternEngine.detect_role_reversal_sr_flip(df_flip)
+    assert flip_res is not None, "Role Reversal detector should detect S/R flip"
+    assert flip_res["direction"] == "BUY"
+    assert flip_res["drawing_data"]["lines"][0]["color"] == "#FFFFFF"
+    print(f"Verified TCS Pattern: {flip_res['pattern_name']} -> Lines All White #FFFFFF")
+
+    # 5. Test Wedge Pattern (Falling Wedge Breakout)
+    df_wedge = pd.DataFrame({
+        "datetime": dates[:18],
+        "open": [24100.0] * 18,
+        "high": [24150.0] * 18,
+        "low": [24050.0] * 18,
+        "close": [24100.0] * 18,
+        "volume": [1000] * 18
+    })
+    df_wedge.loc[0, "high"] = 24200.0
+    df_wedge.loc[16, "high"] = 24080.0
+    df_wedge.loc[0, "low"] = 24050.0
+    df_wedge.loc[16, "low"] = 24000.0
+    df_wedge.loc[17, ["open", "high", "low", "close"]] = [24080, 24100, 24075, 24095]
+
+    wedge_res = PatternEngine.detect_wedge_patterns(df_wedge)
+    assert wedge_res is not None, "Wedge detector should identify Falling Wedge breakout"
+    assert wedge_res["direction"] == "BUY"
+    assert wedge_res["drawing_data"]["lines"][0]["color"] == "#FFFFFF"
+    print(f"Verified TCS Pattern: {wedge_res['pattern_name']} -> Lines All White #FFFFFF")
+
     print("\n=== Step 5: Testing Institutional Risk Management Guard (Pillar 4) ===")
     test_wallet_file = Path(__file__).resolve().parent / "data" / "test_risk_wallet_final.json"
     test_trades_file = Path(__file__).resolve().parent / "data" / "test_risk_trades_final.json"
