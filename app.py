@@ -326,6 +326,87 @@ if plan:
         </div>
         """, unsafe_allow_html=True)
 
+        # -------------------------------------------------------------
+        # 5-MINUTE & 1-HOUR CHART PATTERNS (BULLISH, BEARISH & SIDE WAVE)
+        # -------------------------------------------------------------
+        pattern_matrix = plan.get("pattern_matrix", {})
+        p_5m = pattern_matrix.get("5m", {})
+        p_1h = pattern_matrix.get("1h", {})
+
+        st.markdown("<h4 style='color: #00E5FF; margin: 12px 0 6px 0; font-size: 15px;'>📐 5-Minute & 1-Hour Chart Pattern Matrix (Bullish • Bearish • Side Wave)</h4>", unsafe_allow_html=True)
+        st.caption("Synchronized multi-timeframe pattern detection: Comparing Intraday Execution (5m) against Higher-TF Market Structure (1h).")
+
+        pat_col1, pat_col2 = st.columns(2)
+
+        def render_pattern_box(p_data, tf_title):
+            regime = p_data.get("regime", "SIDE WAVE")
+            regime_col = p_data.get("regime_color", "#FFD600")
+            regime_score = p_data.get("regime_score", 50)
+            summary_txt = p_data.get("summary", "")
+            bulls = p_data.get("bullish", [])
+            bears = p_data.get("bearish", [])
+            sides = p_data.get("side_wave", [])
+
+            st.markdown(f"""
+            <div style="background: #0D1117; border: 1px solid #30363D; border-top: 4px solid {regime_col}; border-radius: 8px; padding: 12px 16px; margin-bottom: 12px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                    <span style="font-weight: bold; font-size: 14px; color: #ECEFF1;">{tf_title}</span>
+                    <span style="background: rgba(255, 255, 255, 0.05); color: {regime_col}; border: 1px solid {regime_col}; font-weight: bold; font-size: 12px; padding: 2px 8px; border-radius: 4px;">
+                        {regime} ({regime_score}%)
+                    </span>
+                </div>
+                <div style="font-size: 12px; color: #8B949E; margin-bottom: 10px;">{summary_txt}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            # 1. Bullish Patterns
+            if bulls:
+                st.markdown("<span style='color: #00E676; font-weight: bold; font-size: 12px;'>🟢 Active Bullish Patterns</span>", unsafe_allow_html=True)
+                for b in bulls:
+                    st.markdown(f"""
+                    <div style="background: #161B22; border-left: 3px solid #00E676; border-radius: 4px; padding: 6px 10px; margin-bottom: 6px;">
+                        <span style="color: #00E676; font-weight: bold; font-size: 12px;">{b.get('pattern_name')} ({b.get('confidence', 80)}%)</span>
+                        <div style="color: #C9D1D9; font-size: 11px; margin-top: 2px;">{b.get('description')}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+            # 2. Bearish Patterns
+            if bears:
+                st.markdown("<span style='color: #FF1744; font-weight: bold; font-size: 12px;'>🔴 Active Bearish Patterns</span>", unsafe_allow_html=True)
+                for br in bears:
+                    st.markdown(f"""
+                    <div style="background: #161B22; border-left: 3px solid #FF1744; border-radius: 4px; padding: 6px 10px; margin-bottom: 6px;">
+                        <span style="color: #FF1744; font-weight: bold; font-size: 12px;">{br.get('pattern_name')} ({br.get('confidence', 80)}%)</span>
+                        <div style="color: #C9D1D9; font-size: 11px; margin-top: 2px;">{br.get('description')}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+            # 3. Side Wave / Consolidation Patterns
+            if sides:
+                st.markdown("<span style='color: #FFD600; font-weight: bold; font-size: 12px;'>🟡 Active Side Wave / Consolidation (Theta Decay Risk)</span>", unsafe_allow_html=True)
+                for s in sides:
+                    st.markdown(f"""
+                    <div style="background: #161B22; border-left: 3px solid #FFD600; border-radius: 4px; padding: 6px 10px; margin-bottom: 6px;">
+                        <span style="color: #FFD600; font-weight: bold; font-size: 12px;">{s.get('pattern_name')} ({s.get('confidence', 80)}%)</span>
+                        <div style="color: #C9D1D9; font-size: 11px; margin-top: 2px;">{s.get('description')}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+            if not bulls and not bears and not sides:
+                st.markdown("""
+                <div style="background: #161B22; border: 1px dashed #30363D; border-radius: 4px; padding: 8px 10px; margin-bottom: 6px; color: #8B949E; font-size: 12px;">
+                    No distinct single pattern active. Standard moving-average drift.
+                </div>
+                """, unsafe_allow_html=True)
+
+        with pat_col1:
+            render_pattern_box(p_5m, "⏱️ 5-Minute Chart Pattern Setup (Intraday)")
+
+        with pat_col2:
+            render_pattern_box(p_1h, "🕒 1-Hour Chart Pattern Structure (Higher-TF)")
+
+        st.markdown("<hr style='border: 0; border-top: 1px solid #21262D; margin: 12px 0 16px 0;'>", unsafe_allow_html=True)
+
         w_col1, w_col2 = st.columns(2)
         with w_col1:
             st.markdown("<h4 style='color: #00E5FF; margin: 4px 0 8px 0; font-size: 14px;'>📈 1. Intraday Trend (15m / 5m)</h4>", unsafe_allow_html=True)

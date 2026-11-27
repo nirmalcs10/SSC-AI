@@ -91,9 +91,33 @@ class ConfluenceStrategy:
         fvgs = LevelDetector.detect_fair_value_gaps(df_5m if df_5m is not None else df_15m)
         obs = LevelDetector.detect_order_blocks(df_5m if df_5m is not None else df_15m)
 
+        # Derive 1-Hour (1h) candles by resampling 15m data for macro structure
+        df_1h = None
+        if df_15m is not None and len(df_15m) >= 4 and "datetime" in df_15m.columns:
+            try:
+                df_1h_raw = df_15m.copy()
+                df_1h_raw.set_index("datetime", inplace=True)
+                df_1h_res = df_1h_raw.resample("1h").agg({
+                    "open": "first",
+                    "high": "max",
+                    "low": "min",
+                    "close": "last",
+                    "volume": "sum"
+                }).dropna().reset_index()
+                if not df_1h_res.empty and len(df_1h_res) >= 3:
+                    df_1h = IndicatorEngine.apply_all(df_1h_res)
+            except Exception as e:
+                df_1h = None
+
         # Detect High-Probability Option Trading Patterns (Tier 1 & Tier 2)
         active_patterns = PatternEngine.detect_all(df_5m=df_5m, df_3m=df_3m, pdh_pdl=pdh_pdl)
         primary_pattern = active_patterns[0] if active_patterns else None
+
+        # Comprehensive 5-Minute and 1-Hour Pattern Matrix (Bullish, Bearish & Side Wave)
+        pattern_matrix = {
+            "5m": PatternEngine.analyze_timeframe_patterns(df=df_5m, timeframe_label="5m", pdh_pdl=pdh_pdl),
+            "1h": PatternEngine.analyze_timeframe_patterns(df=df_1h if df_1h is not None else df_15m, timeframe_label="1h", pdh_pdl=pdh_pdl)
+        }
 
         # Multi-Timeframe Scoring System (-100 to +100) & Structured Rationale
         score = 0
@@ -628,6 +652,7 @@ class ConfluenceStrategy:
             "reasons": reasons,
             "primary_pattern": primary_pattern,
             "detected_patterns": active_patterns,
+            "pattern_matrix": pattern_matrix,
             "detailed_rationale": detailed_rationale,
             "decision_summary": decision_summary
         }

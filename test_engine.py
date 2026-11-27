@@ -118,7 +118,7 @@ def run_tests():
             print(f"Verified Rationale [{sec} -> {factor_dict['factor']}]: {factor_dict['status']}")
     print(f"Decision Summary: {plan['decision_summary']}")
 
-    print("\n=== Step 4b: Testing High-Probability Option Pattern Engine ===")
+    print("\n=== Step 4b: Testing High-Probability Option Pattern Engine & 5m/1h Matrix ===")
     from pattern_engine import PatternEngine
     patterns = PatternEngine.detect_all(df_5m=df_5m_ind, df_3m=mtf_data.get("3m"))
     print(f"Detected {len(patterns)} active option setups: {[p['pattern_name'] for p in patterns]}")
@@ -127,6 +127,15 @@ def run_tests():
         pat = plan["primary_pattern"]
         print(f"Primary Option Setup: {pat['pattern_name']} ({pat['recommended_option']}) | Quality: {pat['confidence']}%")
         assert "pattern_name" in pat and "direction" in pat and "invalidation_level" in pat
+
+    # Verify 5m and 1h Pattern Matrix (Bullish, Bearish, Side Wave)
+    assert "pattern_matrix" in plan, "pattern_matrix must be present in plan"
+    p_mat = plan["pattern_matrix"]
+    assert "5m" in p_mat and "1h" in p_mat, "5m and 1h must be in pattern_matrix"
+    for tf_key in ["5m", "1h"]:
+        tf_data = p_mat[tf_key]
+        assert "regime" in tf_data and "bullish" in tf_data and "bearish" in tf_data and "side_wave" in tf_data
+        print(f"Verified {tf_key} Pattern Matrix: Regime={tf_data['regime']} (Bullish: {len(tf_data['bullish'])}, Bearish: {len(tf_data['bearish'])}, Side Wave: {len(tf_data['side_wave'])})")
 
     print("\n=== Step 5: Testing Institutional Risk Management Guard (Pillar 4) ===")
     test_wallet_file = Path(__file__).resolve().parent / "data" / "test_risk_wallet_final.json"
