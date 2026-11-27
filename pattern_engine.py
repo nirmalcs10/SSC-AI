@@ -78,7 +78,7 @@ class PatternEngine:
                     "lines": [
                         {
                             "title": "Sweep Level",
-                            "color": "#FF5252",
+                            "color": "#FFFFFF",
                             "lineWidth": 2,
                             "lineStyle": 1,
                             "points": [
@@ -90,7 +90,7 @@ class PatternEngine:
                     "price_lines": [
                         {
                             "price": round(ref_high, 2),
-                            "color": "#FF5252",
+                            "color": "#FFFFFF",
                             "lineWidth": 2,
                             "lineStyle": 1,
                             "axisLabelVisible": True,
@@ -287,7 +287,7 @@ class PatternEngine:
                             },
                             {
                                 "title": "Flag Resistance",
-                                "color": "#FF1744",
+                                "color": "#FFFFFF",
                                 "lineWidth": 2,
                                 "lineStyle": 2,
                                 "points": [
@@ -297,7 +297,7 @@ class PatternEngine:
                             },
                             {
                                 "title": "Flag Support",
-                                "color": "#FF1744",
+                                "color": "#FFFFFF",
                                 "lineWidth": 2,
                                 "lineStyle": 2,
                                 "points": [
@@ -309,7 +309,7 @@ class PatternEngine:
                         "price_lines": [
                             {
                                 "price": round(flag_low, 2),
-                                "color": "#FF1744",
+                                "color": "#FFFFFF",
                                 "lineWidth": 2,
                                 "lineStyle": 0,
                                 "axisLabelVisible": True,
@@ -423,7 +423,7 @@ class PatternEngine:
                         "lines": [
                             {
                                 "title": "Mother High",
-                                "color": "#FF1744",
+                                "color": "#FFFFFF",
                                 "lineWidth": 2,
                                 "lineStyle": 2,
                                 "points": [
@@ -433,7 +433,7 @@ class PatternEngine:
                             },
                             {
                                 "title": "Mother Low",
-                                "color": "#FF1744",
+                                "color": "#FFFFFF",
                                 "lineWidth": 2,
                                 "lineStyle": 2,
                                 "points": [
@@ -445,7 +445,7 @@ class PatternEngine:
                         "price_lines": [
                             {
                                 "price": round(m_low, 2),
-                                "color": "#FF1744",
+                                "color": "#FFFFFF",
                                 "lineWidth": 2,
                                 "lineStyle": 0,
                                 "axisLabelVisible": True,
@@ -571,7 +571,7 @@ class PatternEngine:
                                 "lines": [
                                     {
                                         "title": "M Pattern",
-                                        "color": "#FF5252",
+                                        "color": "#FFFFFF",
                                         "lineWidth": 3,
                                         "lineStyle": 0,
                                         "points": [
@@ -586,7 +586,7 @@ class PatternEngine:
                                 "price_lines": [
                                     {
                                         "price": round(neckline, 2),
-                                        "color": "#FFD600",
+                                        "color": "#FFFFFF",
                                         "lineWidth": 2,
                                         "lineStyle": 0,
                                         "axisLabelVisible": True,
@@ -1080,7 +1080,7 @@ class PatternEngine:
                             "lines": [
                                 {
                                     "title": "Descending Trendline",
-                                    "color": "#FF1744",
+                                    "color": "#FFFFFF",
                                     "lineWidth": 2,
                                     "lineStyle": 0,
                                     "points": [
@@ -1090,10 +1090,10 @@ class PatternEngine:
                                 }
                             ],
                             "price_lines": [
-                                {"price": round(float(sub["high"].max()), 2), "color": "#FF1744", "lineWidth": 1, "lineStyle": 2, "axisLabelVisible": True, "title": f"Trend High: ₹{sub['high'].max():,.1f}"}
+                                {"price": round(float(sub["high"].max()), 2), "color": "#FFFFFF", "lineWidth": 1, "lineStyle": 2, "axisLabelVisible": True, "title": f"Trend High: ₹{sub['high'].max():,.1f}"}
                             ],
                             "markers": [
-                                {"time": t_sub_start, "position": "aboveBar", "color": "#FF1744", "shape": "circle", "text": "Channel Top"},
+                                {"time": t_sub_start, "position": "aboveBar", "color": "#FFFFFF", "shape": "circle", "text": "Channel Top"},
                                 {"time": t_sub_end, "position": "aboveBar", "color": "#FF1744", "shape": "arrowDown", "text": "Lower High Step"}
                             ]
                         }
@@ -1128,6 +1128,128 @@ class PatternEngine:
             result["regime_score"] = 75 if n_side > 0 else 60
             result["summary"] = "Sideways / consolidation zone. High Theta decay risk for Option Buyers."
 
+        # Build 24-Hour (5m) or 1-Week (1h) Structural White Lines
+        window_lines = []
+        window_price_lines = []
+        window_markers = []
+        
+        is_5m = (timeframe_label == "5m")
+        span_label = "Last 24 Hours" if is_5m else "Last 1 Week"
+        
+        if df is not None and len(df) >= 5:
+            try:
+                latest_dt = pd.Timestamp(df.iloc[-1]["datetime"]) if "datetime" in df.columns else pd.Timestamp.now()
+                if is_5m:
+                    cutoff_dt = latest_dt - pd.Timedelta(hours=24)
+                    w_df = df[pd.to_datetime(df["datetime"]) >= cutoff_dt] if "datetime" in df.columns else df.iloc[-75:]
+                    if len(w_df) < 10:
+                        w_df = df.iloc[-75:] if len(df) >= 75 else df
+                    line_title = "24h Trend Structure"
+                    high_title = "24h High"
+                    low_title = "24h Low"
+                    marker_high_tag = "24h High"
+                    marker_low_tag = "24h Low"
+                    marker_base_tag = "24h Base"
+                else:  # 1h / Higher-TF macro
+                    cutoff_dt = latest_dt - pd.Timedelta(days=7)
+                    w_df = df[pd.to_datetime(df["datetime"]) >= cutoff_dt] if "datetime" in df.columns else df.iloc[-35:]
+                    if len(w_df) < 5:
+                        w_df = df.iloc[-35:] if len(df) >= 35 else df
+                    line_title = "1-Week Macro Structure"
+                    high_title = "1-Week High"
+                    low_title = "1-Week Low"
+                    marker_high_tag = "1-Week High"
+                    marker_low_tag = "1-Week Low"
+                    marker_base_tag = "1-Week Base"
+
+                t_start = cls._get_candle_time(w_df, 0)
+                t_end = cls._get_candle_time(w_df, -1)
+                h_val = float(w_df["high"].max())
+                h_idx = int(w_df["high"].values.argmax())
+                t_h = cls._get_candle_time(w_df, h_idx)
+                l_val = float(w_df["low"].min())
+                l_idx = int(w_df["low"].values.argmin())
+                t_l = cls._get_candle_time(w_df, l_idx)
+                start_p = float(w_df["close"].iloc[0])
+                end_p = float(w_df["close"].iloc[-1])
+
+                # 1. Structural Trendline across full span (24h or 1-Week) in pure White
+                window_lines.append({
+                    "title": line_title,
+                    "color": "#FFFFFF",
+                    "lineWidth": 2,
+                    "lineStyle": 0,  # Solid White
+                    "points": [
+                        {"time": t_start, "value": round(start_p, 2)},
+                        {"time": t_end, "value": round(end_p, 2)}
+                    ]
+                })
+
+                # 2. Structural High / Resistance boundary across the window in White
+                window_lines.append({
+                    "title": high_title,
+                    "color": "#FFFFFF",
+                    "lineWidth": 2,
+                    "lineStyle": 2,  # Dashed White
+                    "points": [
+                        {"time": t_start, "value": round(h_val, 2)},
+                        {"time": t_end, "value": round(h_val, 2)}
+                    ]
+                })
+
+                # 3. Structural Low / Support boundary across the window in White
+                window_lines.append({
+                    "title": low_title,
+                    "color": "#FFFFFF",
+                    "lineWidth": 2,
+                    "lineStyle": 2,  # Dashed White
+                    "points": [
+                        {"time": t_start, "value": round(l_val, 2)},
+                        {"time": t_end, "value": round(l_val, 2)}
+                    ]
+                })
+
+                window_price_lines.append({
+                    "price": round(h_val, 2),
+                    "color": "#FFFFFF",
+                    "lineWidth": 1,
+                    "lineStyle": 2,
+                    "axisLabelVisible": True,
+                    "title": f"{high_title}: ₹{h_val:,.1f}"
+                })
+                window_price_lines.append({
+                    "price": round(l_val, 2),
+                    "color": "#FFFFFF",
+                    "lineWidth": 1,
+                    "lineStyle": 2,
+                    "axisLabelVisible": True,
+                    "title": f"{low_title}: ₹{l_val:,.1f}"
+                })
+
+                window_markers.append({
+                    "time": t_start,
+                    "position": "belowBar",
+                    "color": "#FFFFFF",
+                    "shape": "circle",
+                    "text": f"{marker_base_tag} @ ₹{start_p:,.1f}"
+                })
+                window_markers.append({
+                    "time": t_h,
+                    "position": "aboveBar",
+                    "color": "#FFFFFF",
+                    "shape": "circle",
+                    "text": f"{marker_high_tag} @ ₹{h_val:,.1f}"
+                })
+                window_markers.append({
+                    "time": t_l,
+                    "position": "belowBar",
+                    "color": "#FFFFFF",
+                    "shape": "circle",
+                    "text": f"{marker_low_tag} @ ₹{l_val:,.1f}"
+                })
+            except Exception:
+                pass
+
         # Select dominant drawing data for chart overlay
         dominant_drawing = None
         if result["regime"] == "BULLISH" and result["bullish"]:
@@ -1153,7 +1275,36 @@ class PatternEngine:
                     dominant_drawing = p["drawing_data"]
                     break
 
-        result["drawing_data"] = dominant_drawing
-        result["drawing_pattern_name"] = dominant_drawing.get("pattern_name", "None") if dominant_drawing else None
+        # Combine window lines and active pattern lines, ensuring all red colors are replaced with white (#FFFFFF)
+        combined_lines = list(window_lines)
+        combined_price_lines = list(window_price_lines)
+        combined_markers = list(window_markers)
+
+        pattern_name = f"{span_label} Structural Channel"
+        if dominant_drawing:
+            pattern_name = dominant_drawing.get("pattern_name", pattern_name)
+            for l in dominant_drawing.get("lines", []):
+                col = l.get("color", "#FFFFFF")
+                if str(col).upper() in ["#FF1744", "#FF5252", "#EF5350", "RED", "#FF0000"]:
+                    col = "#FFFFFF"
+                l["color"] = col
+                combined_lines.append(l)
+            for pl in dominant_drawing.get("price_lines", []):
+                col = pl.get("color", "#FFFFFF")
+                if str(col).upper() in ["#FF1744", "#FF5252", "#EF5350", "RED", "#FF0000"]:
+                    col = "#FFFFFF"
+                pl["color"] = col
+                combined_price_lines.append(pl)
+            for mk in dominant_drawing.get("markers", []):
+                combined_markers.append(mk)
+
+        result["drawing_data"] = {
+            "pattern_name": pattern_name,
+            "span_label": span_label,
+            "lines": combined_lines,
+            "price_lines": combined_price_lines,
+            "markers": combined_markers
+        }
+        result["drawing_pattern_name"] = pattern_name
 
         return result

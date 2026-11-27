@@ -419,11 +419,12 @@ if plan:
             # Auto-drawn pattern indicator badge
             p_drawings = p_data.get("drawing_data")
             p_draw_name = p_data.get("drawing_pattern_name")
+            span_tag = "Last 24 Hours" if tf_code == "5m" else "Last 1 Week"
             if p_drawings and p_draw_name:
                 st.markdown(f"""
-                <div style="background: rgba(0, 229, 255, 0.08); border: 1px solid #00E5FF; border-radius: 4px; padding: 5px 10px; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between;">
-                    <span style="font-size: 11px; font-weight: bold; color: #00E5FF;">
-                        📐 Auto-Drawn Pattern: <strong>{p_draw_name}</strong>
+                <div style="background: rgba(255, 255, 255, 0.05); border: 1px solid #FFFFFF; border-radius: 4px; padding: 5px 10px; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between;">
+                    <span style="font-size: 11px; font-weight: bold; color: #FFFFFF;">
+                        📐 Auto-Drawn White Lines ({span_tag}): <strong>{p_draw_name}</strong>
                     </span>
                     <span style="font-size: 10px; color: #8B949E;">TradingView Chart Overlay Active</span>
                 </div>
@@ -445,10 +446,10 @@ if plan:
                 )
 
         with pat_col1:
-            render_pattern_box(p_5m, "⏱️ 5-Minute Chart Pattern Setup (Intraday)", chart_df=df_5m_chart, tf_code="5m")
+            render_pattern_box(p_5m, "⏱️ 5-Minute Chart Pattern Setup (Last 24 Hours • White Lines)", chart_df=df_5m_chart, tf_code="5m")
 
         with pat_col2:
-            render_pattern_box(p_1h, "🕒 1-Hour Chart Pattern Structure (Higher-TF)", chart_df=df_1h_chart, tf_code="1h")
+            render_pattern_box(p_1h, "🕒 1-Hour Chart Pattern Structure (Last 1 Week • White Lines)", chart_df=df_1h_chart, tf_code="1h")
 
         st.markdown("<hr style='border: 0; border-top: 1px solid #21262D; margin: 12px 0 16px 0;'>", unsafe_allow_html=True)
 

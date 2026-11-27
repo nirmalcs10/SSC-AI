@@ -310,9 +310,11 @@ def render_tradingview_confluence_chart(
                     valid_pts.append({"time": int(pt_t), "value": float(pt_val)})
             valid_pts.sort(key=lambda x: x["time"])
             if len(valid_pts) >= 2:
+                raw_color = line.get("color", "#FFFFFF")
+                line_color = "#FFFFFF" if str(raw_color).upper() in ["#FF1744", "#FF5252", "#EF5350", "RED", "#FF0000"] else raw_color
                 pattern_lines.append({
                     "title": line.get("title", "Pattern"),
-                    "color": line.get("color", "#FFD600"),
+                    "color": line_color,
                     "lineWidth": line.get("lineWidth", 2),
                     "lineStyle": line.get("lineStyle", 0),
                     "points": valid_pts
@@ -321,9 +323,11 @@ def render_tradingview_confluence_chart(
         for pl in pattern_drawings.get("price_lines", []):
             lvl = float(pl.get("price", 0.0))
             if lvl > 0:
+                raw_color = pl.get("color", "#FFFFFF")
+                pl_color = "#FFFFFF" if str(raw_color).upper() in ["#FF1744", "#FF5252", "#EF5350", "RED", "#FF0000"] else raw_color
                 price_lines.append({
                     "price": lvl,
-                    "color": pl.get("color", "#FFD600"),
+                    "color": pl_color,
                     "lineWidth": pl.get("lineWidth", 2),
                     "lineStyle": pl.get("lineStyle", 0),
                     "axisLabelVisible": pl.get("axisLabelVisible", True),

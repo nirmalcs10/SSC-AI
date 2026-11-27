@@ -136,8 +136,21 @@ def run_tests():
         tf_data = p_mat[tf_key]
         assert "regime" in tf_data and "bullish" in tf_data and "bearish" in tf_data and "side_wave" in tf_data
         assert "drawing_data" in tf_data, f"{tf_key} must contain drawing_data"
+        dd = tf_data["drawing_data"]
         p_name = tf_data.get("drawing_pattern_name", "None")
-        print(f"Verified {tf_key} Pattern Matrix: Regime={tf_data['regime']} (Bullish: {len(tf_data['bullish'])}, Bearish: {len(tf_data['bearish'])}, Side Wave: {len(tf_data['side_wave'])}) | Auto-Drawn Pattern: {p_name}")
+        lines = dd.get("lines", [])
+        assert len(lines) > 0, f"{tf_key} must have drawing lines"
+        for l in lines:
+            assert l.get("color") == "#FFFFFF", f"All drawing lines must be white (#FFFFFF), got {l.get('color')}"
+        t_span_hrs = (lines[0]["points"][-1]["time"] - lines[0]["points"][0]["time"]) / 3600.0
+        print(f"Verified {tf_key} Pattern Matrix: Regime={tf_data['regime']} | Auto-Drawn Pattern: {p_name} | Lines: {len(lines)} (All White #FFFFFF) | Span: {t_span_hrs:.1f} hrs")
+
+    # Assert 5m covers ~24 hours and 1h covers ~1 week (>= 120 hrs / 5 days)
+    span_5m_hrs = (p_mat["5m"]["drawing_data"]["lines"][0]["points"][-1]["time"] - p_mat["5m"]["drawing_data"]["lines"][0]["points"][0]["time"]) / 3600.0
+    span_1h_hrs = (p_mat["1h"]["drawing_data"]["lines"][0]["points"][-1]["time"] - p_mat["1h"]["drawing_data"]["lines"][0]["points"][0]["time"]) / 3600.0
+    assert span_5m_hrs >= 20.0, f"5m line span must be at least 20 hours (24h window), got {span_5m_hrs:.1f} hrs"
+    assert span_1h_hrs >= 100.0, f"1h line span must be at least 100 hours (1 week window), got {span_1h_hrs:.1f} hrs"
+    print(f"Verified: 5m line span = {span_5m_hrs:.1f} hrs (24hr session), 1h line span = {span_1h_hrs:.1f} hrs (1-week macro)!")
 
     from angel_chart_mirror import render_angel_one_smartapi_chart
     df_1h_test = plan.get("df_1h") if plan.get("df_1h") is not None else mtf_data.get("1h")
@@ -166,7 +179,7 @@ def run_tests():
         show_trade_overlay=False,
         height=460
     )
-    print("Verified Plain Angel One SmartAPI Feed with Automatic Pattern Drawings generated cleanly for 5m & 1h!")
+    print("Verified Plain Angel One SmartAPI Feed with White Pattern Drawings (5m 24h & 1h 1-Week) generated cleanly!")
 
     print("\n=== Step 5: Testing Institutional Risk Management Guard (Pillar 4) ===")
     test_wallet_file = Path(__file__).resolve().parent / "data" / "test_risk_wallet_final.json"
