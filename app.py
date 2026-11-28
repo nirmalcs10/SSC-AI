@@ -135,13 +135,13 @@ mode_code = "OPTION_SCALP" if "Scalp" in mode else "OPTION_BUY"
 symbol_options = list(INDEX_TOKENS.keys())
 selected_symbol = st.sidebar.selectbox("Select Index (Option Buying)", symbol_options, index=0)
 
-# Chart Overlays Toggles
+# Chart Overlays Toggles (Default: Plain Chart Mode without S/R or trade line clutter)
 st.sidebar.subheader("Chart Drawing Overlays")
-show_sr = st.sidebar.checkbox("Support & Resistance Zones", value=True)
-show_cpr = st.sidebar.checkbox("Central Pivot Range (CPR)", value=True)
-show_pdh_pdl = st.sidebar.checkbox("PDH / PDL & Open", value=True)
-show_fvg = st.sidebar.checkbox("Fair Value Gaps (FVG)", value=True)
-show_trade_overlay = st.sidebar.checkbox("Entry, Stop Loss & Targets", value=True)
+show_sr = st.sidebar.checkbox("Support & Resistance Zones", value=False)
+show_cpr = st.sidebar.checkbox("Central Pivot Range (CPR)", value=False)
+show_pdh_pdl = st.sidebar.checkbox("PDH / PDL & Open", value=False)
+show_fvg = st.sidebar.checkbox("Fair Value Gaps (FVG)", value=False)
+show_trade_overlay = st.sidebar.checkbox("Entry, Stop Loss & Targets", value=False)
 
 # Angel One SmartAPI Login (Only asks for PIN and TOTP)
 with st.sidebar.expander("🔑 Angel One SmartAPI Login", expanded=not st.session_state.angel_connector.is_authenticated):
@@ -424,9 +424,17 @@ if plan:
             regime_score = p_data.get("regime_score", 85)
             regime_color = p_data.get("regime_color", "#FFD600")
 
+            # Extract S/R and Trade Execution levels to display in clean cards (not cluttering the chart)
+            entry_p = float(plan.get("entry_price", 0.0))
+            sl_p = float(plan.get("stop_loss", 0.0))
+            t1_p = float(plan.get("target_1", 0.0))
+            t2_p = float(plan.get("target_2", 0.0))
+            put_supp = float(plan.get("put_support_strike", 0.0))
+            call_res = float(plan.get("call_resistance_strike", 0.0))
+
             if p_drawings and p_draw_name:
                 st.markdown(f"""
-                <div style="background: rgba(255, 255, 255, 0.04); border: 1px solid #FFFFFF; border-radius: 6px; padding: 7px 12px; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px;">
+                <div style="background: rgba(255, 255, 255, 0.04); border: 1px solid #FFFFFF; border-radius: 6px; padding: 7px 12px; margin-bottom: 6px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px;">
                     <div>
                         <span style="font-size: 13px; font-weight: bold; color: #FFFFFF;">
                             📐 Pattern: <strong>{p_draw_name}</strong> <span style="font-size: 11px; color: #8B949E;">({span_tag})</span>
@@ -443,7 +451,23 @@ if plan:
                 </div>
                 """, unsafe_allow_html=True)
 
-            # Embedded TradingView Chart with Patterns, S/R Levels, and Trade Overlays
+            # Clean UI Metrics Panel for S/R Levels & Trade Execution (Keeps chart completely plain)
+            st.markdown(f"""
+            <div style="background: #0D1117; border: 1px solid #21262D; border-radius: 6px; padding: 6px 10px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; font-size: 11px;">
+                <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                    <span><strong style="color: #8B949E;">ENTRY:</strong> <span style="color: #00E5FF; font-weight: bold;">₹{entry_p:,.1f}</span></span>
+                    <span><strong style="color: #8B949E;">SL:</strong> <span style="color: #FF1744; font-weight: bold;">₹{sl_p:,.1f}</span></span>
+                    <span><strong style="color: #8B949E;">T1 (1:2):</strong> <span style="color: #00E676; font-weight: bold;">₹{t1_p:,.1f}</span></span>
+                    <span><strong style="color: #8B949E;">T2 (1:3):</strong> <span style="color: #00C853; font-weight: bold;">₹{t2_p:,.1f}</span></span>
+                </div>
+                <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                    <span><strong style="color: #8B949E;">OI SUPP:</strong> <span style="color: #00E676; font-weight: bold;">₹{put_supp:,.0f}</span></span>
+                    <span><strong style="color: #8B949E;">OI RES:</strong> <span style="color: #FF1744; font-weight: bold;">₹{call_res:,.0f}</span></span>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            # Embedded TradingView Chart with Auto-Drawn Pattern (Pure Plain Chart: No S/R, CPR or Trade Line Clutter)
             if chart_df is not None and not chart_df.empty:
                 render_angel_one_smartapi_chart(
                     df=chart_df,
@@ -451,10 +475,10 @@ if plan:
                     interval=tf_code,
                     trade_plan=plan,
                     pattern_drawings=p_drawings,
-                    show_sr=show_sr,
-                    show_cpr=show_cpr,
-                    show_pdh_pdl=show_pdh_pdl,
-                    show_trade_overlay=show_trade_overlay,
+                    show_sr=False,
+                    show_cpr=False,
+                    show_pdh_pdl=False,
+                    show_trade_overlay=False,
                     height=460
                 )
 
