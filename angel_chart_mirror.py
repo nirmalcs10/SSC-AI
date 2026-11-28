@@ -549,7 +549,7 @@ def render_tradingview_confluence_chart(
             patternLines.forEach(pl => {{
                 try {{
                     const lineSeries = chart.addLineSeries({{
-                        color: pl.color || '#FFD600',
+                        color: pl.color || '#FFFFFF',
                         lineWidth: pl.lineWidth || 2,
                         lineStyle: pl.lineStyle !== undefined ? pl.lineStyle : 0,
                         priceLineVisible: false,
