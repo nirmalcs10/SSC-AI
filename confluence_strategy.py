@@ -115,8 +115,9 @@ class ConfluenceStrategy:
         active_patterns = PatternEngine.detect_all(df_5m=df_5m, df_3m=df_3m, pdh_pdl=pdh_pdl)
         primary_pattern = active_patterns[0] if active_patterns else None
 
-        # Comprehensive 5-Minute and 1-Hour Pattern Matrix (Bullish, Bearish & Side Wave)
+        # Comprehensive 1-Minute, 5-Minute and 1-Hour Pattern Matrix (Bullish, Bearish & Side Wave)
         pattern_matrix = {
+            "1m": PatternEngine.analyze_timeframe_patterns(df=df_1m, timeframe_label="1m", pdh_pdl=pdh_pdl),
             "5m": PatternEngine.analyze_timeframe_patterns(df=df_5m, timeframe_label="5m", pdh_pdl=pdh_pdl),
             "1h": PatternEngine.analyze_timeframe_patterns(df=df_1h if df_1h is not None else df_15m, timeframe_label="1h", pdh_pdl=pdh_pdl)
         }
@@ -658,6 +659,7 @@ class ConfluenceStrategy:
             "primary_pattern": primary_pattern,
             "detected_patterns": active_patterns,
             "pattern_matrix": pattern_matrix,
+            "df_1m": df_1m,
             "df_1h": df_1h,
             "detailed_rationale": detailed_rationale,
             "decision_summary": decision_summary

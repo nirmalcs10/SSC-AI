@@ -1787,18 +1787,30 @@ class PatternDetector:
             result["regime_score"] = 75 if n_side > 0 else 60
             result["summary"] = "Sideways / consolidation zone. High Theta decay risk for Option Buyers."
 
-        # Build 24-Hour (5m) or 1-Week (1h) Structural White Lines
+        # Build 1-Minute Scalp, 24-Hour (5m), or 1-Week (1h) Structural White Lines
         window_lines = []
         window_price_lines = []
         window_markers = []
         
+        is_1m = (timeframe_label == "1m")
         is_5m = (timeframe_label == "5m")
-        span_label = "Last 24 Hours" if is_5m else "Last 1 Week"
+        span_label = "Last Scalp Session" if is_1m else ("Last 24 Hours" if is_5m else "Last 1 Week")
         
         if df is not None and len(df) >= 5:
             try:
                 latest_dt = pd.Timestamp(df.iloc[-1]["datetime"]) if "datetime" in df.columns else pd.Timestamp.now()
-                if is_5m:
+                if is_1m:
+                    cutoff_dt = latest_dt - pd.Timedelta(hours=4)
+                    w_df = df[pd.to_datetime(df["datetime"]) >= cutoff_dt] if "datetime" in df.columns else df.iloc[-60:]
+                    if len(w_df) < 10:
+                        w_df = df.iloc[-60:] if len(df) >= 60 else df
+                    line_title = "1m Scalp Trend Structure"
+                    high_title = "1m Session High"
+                    low_title = "1m Session Low"
+                    marker_high_tag = "1m High"
+                    marker_low_tag = "1m Low"
+                    marker_base_tag = "1m Base"
+                elif is_5m:
                     cutoff_dt = latest_dt - pd.Timedelta(hours=24)
                     w_df = df[pd.to_datetime(df["datetime"]) >= cutoff_dt] if "datetime" in df.columns else df.iloc[-75:]
                     if len(w_df) < 10:
@@ -1943,17 +1955,13 @@ class PatternDetector:
         if dominant_drawing:
             pattern_name = dominant_drawing.get("pattern_name", pattern_name)
             for l in dominant_drawing.get("lines", []):
-                col = l.get("color", "#FFFFFF")
-                if str(col).upper() in ["#FF1744", "#FF5252", "#EF5350", "RED", "#FF0000"]:
-                    col = "#FFFFFF"
-                l["color"] = col
-                combined_lines.append(l)
+                l_copy = dict(l)
+                l_copy["color"] = "#FFFFFF"
+                combined_lines.append(l_copy)
             for pl in dominant_drawing.get("price_lines", []):
-                col = pl.get("color", "#FFFFFF")
-                if str(col).upper() in ["#FF1744", "#FF5252", "#EF5350", "RED", "#FF0000"]:
-                    col = "#FFFFFF"
-                pl["color"] = col
-                combined_price_lines.append(pl)
+                pl_copy = dict(pl)
+                pl_copy["color"] = "#FFFFFF"
+                combined_price_lines.append(pl_copy)
             for mk in dominant_drawing.get("markers", []):
                 combined_markers.append(mk)
 
@@ -1995,7 +2003,7 @@ class PatternDetector:
         conf = tf_analysis.get("regime_score", 75)
         pattern_name = tf_analysis.get("drawing_pattern_name", f"{timeframe} Structure")
         drawing_data = tf_analysis.get("drawing_data", {})
-        span_window = "Last 24 Hours" if timeframe == "5m" else "Last 1 Week"
+        span_window = "Last Scalp Session" if timeframe == "1m" else ("Last 24 Hours" if timeframe == "5m" else "Last 1 Week")
 
         curr_c = df.iloc[-1] if (df is not None and not df.empty) else None
         c_close = float(curr_c["close"]) if curr_c is not None else 0.0
@@ -2102,6 +2110,83 @@ class PatternDetector:
             summary = "Both 5m and 1h are trapped in neutral consolidation channels. High risk of premium erosion from Theta decay."
 
         return {
+            "5m": pred_5m,
+            "1h": pred_1h,
+            "macro_alignment": macro_align,
+            "overall_predicted_direction": overall_dir,
+            "recommended_action": rec_action,
+            "confluence_confidence": confluence_conf,
+            "confluence_summary": summary
+        }
+
+    @classmethod
+    def predict_1m_5m_and_1h(
+        cls,
+        df_1m: pd.DataFrame,
+        df_5m: pd.DataFrame,
+        df_1h: pd.DataFrame,
+        pdh_pdl: Optional[Dict[str, float]] = None
+    ) -> Dict[str, Any]:
+        """
+        Synchronized Multi-Timeframe Pattern Prediction Engine across 1m, 5m, and 1h:
+        1. 1-Minute Chart (Micro Execution Trigger / Scalp Setup)
+        2. 5-Minute Chart (Intraday Setup / 24-Hour Horizon)
+        3. 1-Hour Chart (Macro Trend Structure / 1-Week Horizon)
+        """
+        pred_1m = cls.predict_direction(df_1m, timeframe="1m", pdh_pdl=pdh_pdl)
+        pred_5m = cls.predict_direction(df_5m, timeframe="5m", pdh_pdl=pdh_pdl)
+        pred_1h = cls.predict_direction(df_1h, timeframe="1h", pdh_pdl=pdh_pdl)
+
+        dir_1m = pred_1m["predicted_direction"]
+        dir_5m = pred_5m["predicted_direction"]
+        dir_1h = pred_1h["predicted_direction"]
+
+        # Check alignment across 1m, 5m, 1h
+        if dir_1m in ("BUY", "BULLISH") and dir_5m in ("BUY", "BULLISH") and dir_1h in ("BUY", "BULLISH"):
+            macro_align = "TRIPLE CONFLUENT BULLISH (1m + 5m + 1h Alignment)"
+            overall_dir = "BUY"
+            rec_action = "AGGRESSIVE CE BUYING (Call Options)"
+            confluence_conf = min(98, int((pred_1m["confidence"] + pred_5m["confidence"] + pred_1h["confidence"]) / 3) + 6)
+            summary = f"Full 3-tier bullish synchronization (1m: {pred_1m['predicted_pattern']}, 5m: {pred_5m['predicted_pattern']}, 1h: {pred_1h['predicted_pattern']}). High institutional momentum."
+        elif dir_1m in ("SELL", "BEARISH") and dir_5m in ("SELL", "BEARISH") and dir_1h in ("SELL", "BEARISH"):
+            macro_align = "TRIPLE CONFLUENT BEARISH (1m + 5m + 1h Alignment)"
+            overall_dir = "SELL"
+            rec_action = "AGGRESSIVE PE BUYING (Put Options)"
+            confluence_conf = min(98, int((pred_1m["confidence"] + pred_5m["confidence"] + pred_1h["confidence"]) / 3) + 6)
+            summary = f"Full 3-tier bearish breakdown (1m: {pred_1m['predicted_pattern']}, 5m: {pred_5m['predicted_pattern']}, 1h: {pred_1h['predicted_pattern']}). High downward momentum."
+        elif dir_5m in ("BUY", "BULLISH") and dir_1h in ("BUY", "BULLISH"):
+            macro_align = "CONFLUENT BULLISH (5m + 1h Alignment, 1m Scalp Entry)"
+            overall_dir = "BUY"
+            rec_action = "CE BUYING ON 1M PULLBACK"
+            confluence_conf = min(95, int((pred_5m["confidence"] + pred_1h["confidence"]) / 2) + 4)
+            summary = f"Higher timeframes (5m & 1h) are Bullish. 1m ({pred_1m['predicted_pattern']}) provides optimal scalp timing."
+        elif dir_5m in ("SELL", "BEARISH") and dir_1h in ("SELL", "BEARISH"):
+            macro_align = "CONFLUENT BEARISH (5m + 1h Alignment, 1m Scalp Entry)"
+            overall_dir = "SELL"
+            rec_action = "PE BUYING ON 1M PULLBACK"
+            confluence_conf = min(95, int((pred_5m["confidence"] + pred_1h["confidence"]) / 2) + 4)
+            summary = f"Higher timeframes (5m & 1h) are Bearish. 1m ({pred_1m['predicted_pattern']}) provides optimal scalp timing."
+        elif dir_1m in ("BUY", "BULLISH") and dir_5m in ("BUY", "BULLISH"):
+            macro_align = "INTRADAY BULLISH SCALP (1m + 5m Bullish against 1h Macro)"
+            overall_dir = "BUY"
+            rec_action = "QUICK CE SCALP (Tight SL)"
+            confluence_conf = 82
+            summary = f"Short-term momentum is bullish on 1m and 5m. Trade with tight trailing stop loss."
+        elif dir_1m in ("SELL", "BEARISH") and dir_5m in ("SELL", "BEARISH"):
+            macro_align = "INTRADAY BEARISH SCALP (1m + 5m Bearish against 1h Macro)"
+            overall_dir = "SELL"
+            rec_action = "QUICK PE SCALP (Tight SL)"
+            confluence_conf = 82
+            summary = f"Short-term downward velocity on 1m and 5m. Trade with tight trailing stop loss."
+        else:
+            macro_align = "MIXED / CONSOLIDATION (Multi-Timeframe Divergence)"
+            overall_dir = "SIDE_WAVE"
+            rec_action = "WAIT / CAUTION (Theta Decay Risk)"
+            confluence_conf = 70
+            summary = f"Timeframes are divergent (1m: {dir_1m}, 5m: {dir_5m}, 1h: {dir_1h}). Option Buyers should wait for clear directional alignment."
+
+        return {
+            "1m": pred_1m,
             "5m": pred_5m,
             "1h": pred_1h,
             "macro_alignment": macro_align,

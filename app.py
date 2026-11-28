@@ -327,16 +327,19 @@ if plan:
         """, unsafe_allow_html=True)
 
         # -------------------------------------------------------------
-        # 5-MINUTE & 1-HOUR CHART PATTERNS (BULLISH, BEARISH & SIDE WAVE)
+        # 1-MINUTE, 5-MINUTE & 1-HOUR CHART PATTERNS (FULL-WIDTH LIST LAYOUT)
         # -------------------------------------------------------------
         pattern_matrix = plan.get("pattern_matrix", {})
+        p_1m = pattern_matrix.get("1m", {})
         p_5m = pattern_matrix.get("5m", {})
         p_1h = pattern_matrix.get("1h", {})
 
-        st.markdown("<h4 style='color: #00E5FF; margin: 12px 0 6px 0; font-size: 15px;'>📐 5-Minute & 1-Hour Chart Pattern Matrix (Bullish • Bearish • Side Wave)</h4>", unsafe_allow_html=True)
-        st.caption("Synchronized multi-timeframe pattern detection: Comparing Intraday Execution (5m) against Higher-TF Market Structure (1h).")
+        st.markdown("<h4 style='color: #00E5FF; margin: 16px 0 6px 0; font-size: 16px;'>📐 Multi-Timeframe Chart Analysis (1m • 5m • 1h List View)</h4>", unsafe_allow_html=True)
+        st.caption("Synchronized multi-timeframe analysis: 1-Minute Scalp Execution ➔ 5-Minute Intraday Setup ➔ 1-Hour Macro Market Structure (Full-width list layout).")
 
-        pat_col1, pat_col2 = st.columns(2)
+        df_1m_chart = mtf_data.get("1m") if mtf_data else None
+        if df_1m_chart is None and plan:
+            df_1m_chart = plan.get("df_1m")
 
         df_5m_chart = mtf_data.get("5m") if mtf_data else None
         df_1h_chart = mtf_data.get("1h") if mtf_data else None
@@ -419,7 +422,7 @@ if plan:
             # Auto-drawn pattern indicator banner with Pattern Name & Confidence Level
             p_drawings = p_data.get("drawing_data")
             p_draw_name = p_data.get("drawing_pattern_name")
-            span_tag = "Last 24 Hours" if tf_code == "5m" else "Last 1 Week"
+            span_tag = "Last Scalp Session" if tf_code == "1m" else ("Last 24 Hours" if tf_code == "5m" else "Last 1 Week")
             regime = p_data.get("regime", "SIDE WAVE")
             regime_score = p_data.get("regime_score", 85)
             regime_color = p_data.get("regime_color", "#FFD600")
@@ -486,11 +489,29 @@ if plan:
                     height=520
                 )
 
-        with pat_col1:
-            render_pattern_box(p_5m, "⏱️ 5-Minute Chart Pattern Setup (Last 24 Hours • White Lines)", chart_df=df_5m_chart, tf_code="5m")
+        # Full-Width Vertical List Layout for 1m, 5m, and 1h Charts
+        list_filter = st.radio(
+            "Timeframe View Filter:",
+            ["📜 All Timeframes (1m + 5m + 1h List View)", "⚡ 1-Minute Scalp Only", "⏱️ 5-Minute Setup Only", "🕒 1-Hour Macro Only"],
+            horizontal=True,
+            index=0,
+            key="tf_list_view_filter"
+        )
 
-        with pat_col2:
-            render_pattern_box(p_1h, "🕒 1-Hour Chart Pattern Structure (Last 1 Week • White Lines)", chart_df=df_1h_chart, tf_code="1h")
+        # List Item 1: 1-Minute Scalp Chart & Pattern Setup
+        if "All" in list_filter or "1-Minute" in list_filter:
+            st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
+            render_pattern_box(p_1m, "⚡ 1-Minute Scalp Chart & Execution Trigger (Last Scalp Session • White Lines • VWAP • EMA 9/21 • RSI)", chart_df=df_1m_chart, tf_code="1m")
+
+        # List Item 2: 5-Minute Intraday Chart & Pattern Setup
+        if "All" in list_filter or "5-Minute" in list_filter:
+            st.markdown("<div style='margin-top: 16px;'></div>", unsafe_allow_html=True)
+            render_pattern_box(p_5m, "⏱️ 5-Minute Intraday Chart & Pattern Setup (Last 24 Hours • White Lines • VWAP • EMA 9/21 • RSI)", chart_df=df_5m_chart, tf_code="5m")
+
+        # List Item 3: 1-Hour Macro Market Structure
+        if "All" in list_filter or "1-Hour" in list_filter:
+            st.markdown("<div style='margin-top: 16px;'></div>", unsafe_allow_html=True)
+            render_pattern_box(p_1h, "🕒 1-Hour Macro Market Structure (Last 1 Week • White Lines • VWAP • EMA 9/21 • RSI)", chart_df=df_1h_chart, tf_code="1h")
 
         st.markdown("<hr style='border: 0; border-top: 1px solid #21262D; margin: 12px 0 16px 0;'>", unsafe_allow_html=True)
 

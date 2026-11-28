@@ -128,11 +128,11 @@ def run_tests():
         print(f"Primary Option Setup: {pat['pattern_name']} ({pat['recommended_option']}) | Quality: {pat['confidence']}%")
         assert "pattern_name" in pat and "direction" in pat and "invalidation_level" in pat
 
-    # Verify 5m and 1h Pattern Matrix (Bullish, Bearish, Side Wave)
+    # Verify 1m, 5m and 1h Pattern Matrix (Bullish, Bearish, Side Wave)
     assert "pattern_matrix" in plan, "pattern_matrix must be present in plan"
     p_mat = plan["pattern_matrix"]
-    assert "5m" in p_mat and "1h" in p_mat, "5m and 1h must be in pattern_matrix"
-    for tf_key in ["5m", "1h"]:
+    assert "1m" in p_mat and "5m" in p_mat and "1h" in p_mat, "1m, 5m and 1h must be in pattern_matrix"
+    for tf_key in ["1m", "5m", "1h"]:
         tf_data = p_mat[tf_key]
         assert "regime" in tf_data and "bullish" in tf_data and "bearish" in tf_data and "side_wave" in tf_data
         assert "drawing_data" in tf_data, f"{tf_key} must contain drawing_data"
@@ -156,6 +156,21 @@ def run_tests():
     from chart_plotter import ChartPlotter
     df_1h_test = plan.get("df_1h") if plan.get("df_1h") is not None else mtf_data.get("1h")
     assert df_1h_test is not None and not df_1h_test.empty, "df_1h must be generated and available"
+    render_angel_one_smartapi_chart(
+        df=mtf_data["1m"],
+        symbol="NIFTY",
+        interval="1m",
+        trade_plan=plan,
+        pattern_drawings=p_mat["1m"].get("drawing_data"),
+        show_sr=False,
+        show_cpr=False,
+        show_pdh_pdl=False,
+        show_trade_overlay=False,
+        show_vwap=True,
+        show_ema=True,
+        show_rsi=True,
+        height=520
+    )
     render_angel_one_smartapi_chart(
         df=mtf_data["5m"],
         symbol="NIFTY",
@@ -189,7 +204,7 @@ def run_tests():
     # Test ChartPlotter RSI chart parity
     rsi_fig = ChartPlotter.create_rsi_chart(mtf_data["5m"])
     assert rsi_fig is not None and len(rsi_fig.data) > 0, "ChartPlotter.create_rsi_chart must generate valid RSI figure"
-    print("Verified Plain Angel One SmartAPI Feed with VWAP, EMA 9/21, RSI sub-pane & White Pattern Drawings (5m 24h & 1h 1-Week) generated cleanly!")
+    print("Verified Plain Angel One SmartAPI Feed with VWAP, EMA 9/21, RSI sub-pane & White Pattern Drawings (1m Scalp, 5m 24h & 1h 1-Week) generated cleanly!")
 
     print("\n=== Step 4c: Testing Tamil Crypto School (TCS) Master Patterns Detection ===")
     import pandas as pd
@@ -298,7 +313,7 @@ def run_tests():
     assert wedge_res["drawing_data"]["lines"][0]["color"] == "#FFFFFF"
     print(f"Verified TCS Pattern: {wedge_res['pattern_name']} -> Lines All White #FFFFFF")
 
-    print("\n=== Step 4d: Testing engine.pattern_detector.PatternDetector (5m & 1h Prediction) ===")
+    print("\n=== Step 4d: Testing engine.pattern_detector.PatternDetector (1m, 5m & 1h Prediction) ===")
     from engine.pattern_detector import PatternDetector
     pred_res = PatternDetector.predict_5m_and_1h(df_5m=df_tt.iloc[:21], df_1h=df_flip)
     assert "5m" in pred_res and "1h" in pred_res
@@ -311,6 +326,13 @@ def run_tests():
     print(f"Verified PatternDetector 5m Prediction: {pred_res['5m']['predicted_pattern']} ({pred_res['5m']['predicted_direction']}) | Conf: {pred_res['5m']['confidence']}%")
     print(f"Verified PatternDetector 1h Prediction: {pred_res['1h']['predicted_pattern']} ({pred_res['1h']['predicted_direction']}) | Conf: {pred_res['1h']['confidence']}%")
     print(f"Verified Confluent Multi-Timeframe Alignment: {pred_res['macro_alignment']} -> Action: {pred_res['recommended_action']}")
+
+    # Test predict_1m_5m_and_1h
+    pred_3tier = PatternDetector.predict_1m_5m_and_1h(df_1m=df_tt.iloc[:21], df_5m=df_tt.iloc[:21], df_1h=df_flip)
+    assert "1m" in pred_3tier and "5m" in pred_3tier and "1h" in pred_3tier
+    assert pred_3tier["1m"]["predicted_direction"] == "BUY"
+    assert "TRIPLE CONFLUENT BULLISH" in pred_3tier["macro_alignment"]
+    print(f"Verified PatternDetector 1m+5m+1h Prediction: {pred_3tier['macro_alignment']} -> Action: {pred_3tier['recommended_action']}")
 
     print("\n=== Step 5: Testing Institutional Risk Management Guard (Pillar 4) ===")
     test_wallet_file = Path(__file__).resolve().parent / "data" / "test_risk_wallet_final.json"
