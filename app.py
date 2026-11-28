@@ -468,6 +468,7 @@ if plan:
             """, unsafe_allow_html=True)
 
             # Embedded TradingView Chart with Auto-Drawn Pattern (Pure Plain Chart: No S/R, CPR or Trade Line Clutter)
+            # Featuring real-time intraday VWAP, EMA 9/21, and synchronized RSI(14) indicator sub-pane
             if chart_df is not None and not chart_df.empty:
                 render_angel_one_smartapi_chart(
                     df=chart_df,
@@ -479,7 +480,10 @@ if plan:
                     show_cpr=False,
                     show_pdh_pdl=False,
                     show_trade_overlay=False,
-                    height=460
+                    show_vwap=True,
+                    show_ema=True,
+                    show_rsi=True,
+                    height=520
                 )
 
         with pat_col1:
@@ -1175,6 +1179,9 @@ with tab_chart:
                 symbol=selected_symbol,
                 interval=chart_tf,
                 trade_plan=plan,
+                show_vwap=True,
+                show_ema=True,
+                show_rsi=True,
                 height=640
             )
         else:
@@ -1191,7 +1198,7 @@ with tab_chart:
             )
         with confluence_engine_col2:
             st.write("")
-            st.caption("Active Overlays: S/R, CPR, PDH/PDL, Open, Trade Box")
+            st.caption("Active Overlays: S/R, CPR, PDH/PDL, Open, Trade Box, VWAP, EMA 9/21, RSI")
 
         if mtf_data and chart_tf in mtf_data:
             chart_df = mtf_data[chart_tf]
@@ -1205,6 +1212,9 @@ with tab_chart:
                     show_cpr=show_cpr,
                     show_pdh_pdl=show_pdh_pdl,
                     show_trade_overlay=show_trade_overlay,
+                    show_vwap=True,
+                    show_ema=True,
+                    show_rsi=True,
                     height=640
                 )
             else:
@@ -1217,6 +1227,9 @@ with tab_chart:
                     show_pdh_pdl=show_pdh_pdl,
                     show_fvg=show_fvg,
                     show_trade_overlay=show_trade_overlay,
+                    show_vwap=True,
+                    show_ema=True,
+                    show_rsi=True,
                     height=580,
                     is_grid_compact=False
                 )

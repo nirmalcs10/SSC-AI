@@ -10,6 +10,7 @@ import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
 from typing import Optional, Dict, Any, List
+from indicator_engine import IndicatorEngine
 
 # Mapping Indian symbols to TradingView NSE tickers (for Cloud widget fallback)
 TV_SYMBOL_MAP = {
@@ -45,6 +46,9 @@ def render_tradingview_confluence_chart(
     show_cpr: bool = True,
     show_pdh_pdl: bool = True,
     show_trade_overlay: bool = True,
+    show_vwap: bool = True,
+    show_ema: bool = True,
+    show_rsi: bool = True,
     height: int = 650
 ):
     """
@@ -52,6 +56,7 @@ def render_tradingview_confluence_chart(
     Powered by genuine Angel One SmartAPI data with Zero symbol restrictions.
     Displays automated Support/Resistance zones, CPR, PDH/PDL, Today's Open,
     and Trade Box (Entry, Stop Loss, Target 1, Target 2, Target 3, Risk-to-Reward).
+    Includes real-time VWAP, EMA 9/21, and synchronized RSI(14) indicator sub-pane.
     """
     if df is None or df.empty:
         st.warning(f"No candle data available from Angel One for {symbol} ({interval}).")
@@ -61,9 +66,21 @@ def render_tradingview_confluence_chart(
     clean_df = df.copy()
     if "datetime" in clean_df.columns:
         clean_df = clean_df.drop_duplicates(subset=["datetime"]).sort_values("datetime")
-    
+
+    # Ensure technical indicators (VWAP, EMA 9/21, RSI) are computed
+    req_indicators = ["vwap", "ema_9", "ema_21", "rsi"]
+    if not all(col in clean_df.columns for col in req_indicators):
+        try:
+            clean_df = IndicatorEngine.apply_all(clean_df)
+        except Exception:
+            pass
+
     candle_records = []
     volume_records = []
+    vwap_records = []
+    ema9_records = []
+    ema21_records = []
+    rsi_records = []
     seen_times = set()
 
     for _, row in clean_df.iterrows():
@@ -91,6 +108,15 @@ def render_tradingview_confluence_chart(
                 "value": v,
                 "color": "rgba(8, 153, 129, 0.45)" if c >= o else "rgba(242, 54, 69, 0.45)"
             })
+
+            if show_vwap and "vwap" in row and pd.notna(row["vwap"]):
+                vwap_records.append({"time": t, "value": round(float(row["vwap"]), 2)})
+            if show_ema and "ema_9" in row and pd.notna(row["ema_9"]):
+                ema9_records.append({"time": t, "value": round(float(row["ema_9"]), 2)})
+            if show_ema and "ema_21" in row and pd.notna(row["ema_21"]):
+                ema21_records.append({"time": t, "value": round(float(row["ema_21"]), 2)})
+            if show_rsi and "rsi" in row and pd.notna(row["rsi"]):
+                rsi_records.append({"time": t, "value": round(float(row["rsi"]), 2)})
         except Exception:
             continue
 
@@ -380,9 +406,16 @@ def render_tradingview_confluence_chart(
 
     candles_json = json.dumps(candle_records)
     volumes_json = json.dumps(volume_records)
+    vwap_json = json.dumps(vwap_records)
+    ema9_json = json.dumps(ema9_records)
+    ema21_json = json.dumps(ema21_records)
+    rsi_json = json.dumps(rsi_records)
     price_lines_json = json.dumps(price_lines)
     markers_json = json.dumps(markers)
     pattern_lines_json = json.dumps(pattern_lines)
+    has_rsi_js = "true" if (show_rsi and len(rsi_records) > 0) else "false"
+    show_vwap_js = "true" if (show_vwap and len(vwap_records) > 0) else "false"
+    show_ema_js = "true" if (show_ema and len(ema9_records) > 0) else "false"
 
     html_code = f"""
     <!DOCTYPE html>
@@ -427,20 +460,47 @@ def render_tradingview_confluence_chart(
             .badge-angel {{ background: #00E5FF; color: #0E1117; }}
             .badge-signal {{ background: rgba(0, 200, 83, 0.15); border: 1px solid {signal_color}; color: {signal_color}; }}
             .price-tag {{ font-size: 15px; font-weight: bold; }}
-            #chart-container {{
+            #chart-wrapper {{
                 width: 100%;
                 height: calc(100% - 44px);
+                display: flex;
+                flex-direction: column;
                 position: relative;
+            }}
+            #price-container {{
+                width: 100%;
+                height: {"74%" if (show_rsi and rsi_records) else "100%"};
+                position: relative;
+            }}
+            #rsi-container {{
+                width: 100%;
+                height: 26%;
+                position: relative;
+                border-top: 1px solid #2B2B43;
             }}
             #legend {{
                 position: absolute;
-                top: 10px;
-                left: 14px;
+                top: 8px;
+                left: 12px;
                 z-index: 10;
-                font-size: 12px;
-                background: rgba(19, 23, 34, 0.85);
-                padding: 6px 12px;
-                border-radius: 6px;
+                font-size: 11px;
+                background: rgba(19, 23, 34, 0.88);
+                padding: 4px 10px;
+                border-radius: 5px;
+                border: 1px solid #2B2B43;
+                pointer-events: none;
+                backdrop-filter: blur(4px);
+                white-space: nowrap;
+            }}
+            #rsi-legend {{
+                position: absolute;
+                top: 4px;
+                left: 12px;
+                z-index: 10;
+                font-size: 11px;
+                background: rgba(19, 23, 34, 0.88);
+                padding: 2px 8px;
+                border-radius: 4px;
                 border: 1px solid #2B2B43;
                 pointer-events: none;
                 backdrop-filter: blur(4px);
@@ -449,11 +509,15 @@ def render_tradingview_confluence_chart(
     </head>
     <body>
         <div id="header-bar">
-            <div style="display: flex; align-items: center;">
+            <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 4px;">
                 <span class="badge badge-sym">{symbol}</span>
                 <span class="badge badge-tf">{interval}</span>
                 <span class="badge badge-angel">⚡ Angel One SmartAPI Feed</span>
                 <span class="badge badge-signal">{signal_text}</span>
+                {"<span class=\"badge\" style=\"background: rgba(255, 235, 59, 0.15); color: #FFEB3B; border: 1px solid rgba(255, 235, 59, 0.4);\">VWAP</span>" if (show_vwap and vwap_records) else ""}
+                {"<span class=\"badge\" style=\"background: rgba(41, 98, 255, 0.15); color: #2962FF; border: 1px solid rgba(41, 98, 255, 0.4);\">EMA 9</span>" if (show_ema and ema9_records) else ""}
+                {"<span class=\"badge\" style=\"background: rgba(255, 152, 0, 0.15); color: #FF9800; border: 1px solid rgba(255, 152, 0, 0.4);\">EMA 21</span>" if (show_ema and ema21_records) else ""}
+                {"<span class=\"badge\" style=\"background: rgba(171, 71, 188, 0.15); color: #AB47BC; border: 1px solid rgba(171, 71, 188, 0.4);\">RSI 14</span>" if (show_rsi and rsi_records) else ""}
             </div>
             <div style="display: flex; align-items: center; gap: 12px;">
                 <span style="font-size: 12px; color: #8B949E;">RR: <strong style="color: #00E5FF;">{rrr_text}</strong></span>
@@ -466,16 +530,28 @@ def render_tradingview_confluence_chart(
             </div>
         </div>
 
-        <div id="chart-container">
-            <div id="legend">
-                <span style="font-weight: bold; color: #ECEFF1;">{symbol} • {interval}</span>
-                <span id="ohlc-text" style="margin-left: 10px; color: #8B949E;">O: - H: - L: - C: -</span>
+        <div id="chart-wrapper">
+            <div id="price-container">
+                <div id="legend">
+                    <span style="font-weight: bold; color: #ECEFF1;">{symbol} • {interval}</span>
+                    <span id="ohlc-text" style="margin-left: 8px; color: #8B949E;">O: - H: - L: - C: -</span>
+                    <span id="ind-legend" style="margin-left: 10px;">
+                        {"<span style=\"color: #FFEB3B; margin-left: 6px;\">VWAP: <strong id=\"vwap-legend-val\">-</strong></span>" if (show_vwap and vwap_records) else ""}
+                        {"<span style=\"color: #2962FF; margin-left: 6px;\">EMA 9: <strong id=\"ema9-legend-val\">-</strong></span>" if (show_ema and ema9_records) else ""}
+                        {"<span style=\"color: #FF9800; margin-left: 6px;\">EMA 21: <strong id=\"ema21-legend-val\">-</strong></span>" if (show_ema and ema21_records) else ""}
+                    </span>
+                </div>
             </div>
+            {"<div id=\"rsi-container\"><div id=\"rsi-legend\"><span style=\"font-weight: bold; color: #AB47BC;\">RSI (14):</span> <strong id=\"rsi-legend-val\" style=\"color: #ECEFF1; margin-left: 4px;\">-</strong><span style=\"color: #787B86; font-size: 10px; margin-left: 8px;\">(70 OB / 30 OS)</span></div></div>" if (show_rsi and rsi_records) else ""}
         </div>
 
         <script>
-            const container = document.getElementById('chart-container');
-            const chart = LightweightCharts.createChart(container, {{
+            const hasRsi = {has_rsi_js};
+            const showVwap = {show_vwap_js};
+            const showEma = {show_ema_js};
+
+            const priceContainer = document.getElementById('price-container');
+            const priceChart = LightweightCharts.createChart(priceContainer, {{
                 layout: {{
                     background: {{ type: 'solid', color: '#131722' }},
                     textColor: '#D9D9D9',
@@ -493,7 +569,7 @@ def render_tradingview_confluence_chart(
                     borderColor: '#2B2B43',
                     scaleMargins: {{
                         top: 0.08,
-                        bottom: 0.22,
+                        bottom: 0.20,
                     }},
                 }},
                 timeScale: {{
@@ -503,7 +579,7 @@ def render_tradingview_confluence_chart(
                 }},
             }});
 
-            const candleSeries = chart.addCandlestickSeries({{
+            const candleSeries = priceChart.addCandlestickSeries({{
                 upColor: '#089981',
                 downColor: '#F23645',
                 borderDownColor: '#F23645',
@@ -514,10 +590,14 @@ def render_tradingview_confluence_chart(
 
             const candleData = {candles_json};
             const volumeData = {volumes_json};
+            const vwapData = {vwap_json};
+            const ema9Data = {ema9_json};
+            const ema21Data = {ema21_json};
+            const rsiData = {rsi_json};
 
             candleSeries.setData(candleData);
 
-            const volumeSeries = chart.addHistogramSeries({{
+            const volumeSeries = priceChart.addHistogramSeries({{
                 priceFormat: {{
                     type: 'volume',
                 }},
@@ -530,6 +610,48 @@ def render_tradingview_confluence_chart(
                 }},
             }});
             volumeSeries.setData(volumeData);
+
+            // Add VWAP Line Series
+            let vwapSeries = null;
+            if (showVwap && vwapData.length > 0) {{
+                vwapSeries = priceChart.addLineSeries({{
+                    color: '#FFEB3B',
+                    lineWidth: 2,
+                    title: 'VWAP',
+                    priceLineVisible: false,
+                    lastValueVisible: true,
+                    crosshairMarkerVisible: true,
+                }});
+                vwapSeries.setData(vwapData);
+            }}
+
+            // Add EMA 9 Line Series
+            let ema9Series = null;
+            if (showEma && ema9Data.length > 0) {{
+                ema9Series = priceChart.addLineSeries({{
+                    color: '#2962FF',
+                    lineWidth: 1.5,
+                    title: 'EMA 9',
+                    priceLineVisible: false,
+                    lastValueVisible: true,
+                    crosshairMarkerVisible: true,
+                }});
+                ema9Series.setData(ema9Data);
+            }}
+
+            // Add EMA 21 Line Series
+            let ema21Series = null;
+            if (showEma && ema21Data.length > 0) {{
+                ema21Series = priceChart.addLineSeries({{
+                    color: '#FF9800',
+                    lineWidth: 1.5,
+                    title: 'EMA 21',
+                    priceLineVisible: false,
+                    lastValueVisible: true,
+                    crosshairMarkerVisible: true,
+                }});
+                ema21Series.setData(ema21Data);
+            }}
 
             // Add Dynamic AI Confluence & Trade Box Price Lines
             const priceLines = {price_lines_json};
@@ -548,7 +670,7 @@ def render_tradingview_confluence_chart(
             const patternLines = {pattern_lines_json};
             patternLines.forEach(pl => {{
                 try {{
-                    const lineSeries = chart.addLineSeries({{
+                    const lineSeries = priceChart.addLineSeries({{
                         color: pl.color || '#FFFFFF',
                         lineWidth: pl.lineWidth || 2,
                         lineStyle: pl.lineStyle !== undefined ? pl.lineStyle : 0,
@@ -568,26 +690,191 @@ def render_tradingview_confluence_chart(
                 candleSeries.setMarkers(markers);
             }}
 
-            // Dynamic Crosshair Legend Update
+            // RSI Sub-Chart Setup
+            let rsiChart = null;
+            let rsiSeries = null;
+            if (hasRsi) {{
+                const rsiContainer = document.getElementById('rsi-container');
+                rsiChart = LightweightCharts.createChart(rsiContainer, {{
+                    layout: {{
+                        background: {{ type: 'solid', color: '#131722' }},
+                        textColor: '#D9D9D9',
+                        fontSize: 11,
+                        fontFamily: "-apple-system, BlinkMacSystemFont, 'Trebuchet MS', Roboto, Ubuntu, sans-serif"
+                    }},
+                    grid: {{
+                        vertLines: {{ color: 'rgba(42, 46, 57, 0.3)' }},
+                        horzLines: {{ color: 'rgba(42, 46, 57, 0.3)' }},
+                    }},
+                    crosshair: {{
+                        mode: LightweightCharts.CrosshairMode.Normal,
+                    }},
+                    rightPriceScale: {{
+                        borderColor: '#2B2B43',
+                        scaleMargins: {{
+                            top: 0.12,
+                            bottom: 0.12,
+                        }},
+                    }},
+                    timeScale: {{
+                        borderColor: '#2B2B43',
+                        timeVisible: true,
+                        secondsVisible: false,
+                    }},
+                }});
+
+                rsiSeries = rsiChart.addLineSeries({{
+                    color: '#AB47BC',
+                    lineWidth: 1.5,
+                    title: 'RSI 14',
+                    priceLineVisible: false,
+                    lastValueVisible: true,
+                }});
+                rsiSeries.setData(rsiData);
+
+                // Levels 70 (Overbought), 50 (Midline), 30 (Oversold)
+                rsiSeries.createPriceLine({{
+                    price: 70,
+                    color: '#EF5350',
+                    lineWidth: 1,
+                    lineStyle: 2,
+                    axisLabelVisible: true,
+                    title: '70',
+                }});
+                rsiSeries.createPriceLine({{
+                    price: 50,
+                    color: '#787B86',
+                    lineWidth: 1,
+                    lineStyle: 1,
+                    axisLabelVisible: false,
+                    title: '',
+                }});
+                rsiSeries.createPriceLine({{
+                    price: 30,
+                    color: '#26A69A',
+                    lineWidth: 1,
+                    lineStyle: 2,
+                    axisLabelVisible: true,
+                    title: '30',
+                }});
+
+                // Bidirectional Logical Range Sync
+                let isSyncingRange = false;
+                priceChart.timeScale().subscribeVisibleLogicalRangeChange(range => {{
+                    if (isSyncingRange || !range) return;
+                    isSyncingRange = true;
+                    rsiChart.timeScale().setVisibleLogicalRange(range);
+                    isSyncingRange = false;
+                }});
+                rsiChart.timeScale().subscribeVisibleLogicalRangeChange(range => {{
+                    if (isSyncingRange || !range) return;
+                    isSyncingRange = true;
+                    priceChart.timeScale().setVisibleLogicalRange(range);
+                    isSyncingRange = false;
+                }});
+
+                // Bidirectional Crosshair Sync
+                priceChart.subscribeCrosshairMove(param => {{
+                    try {{
+                        if (!param || !param.time) {{
+                            rsiChart.clearCrosshairPosition();
+                        }} else {{
+                            rsiChart.setCrosshairPosition(0, param.time, rsiSeries);
+                        }}
+                    }} catch (e) {{}}
+                }});
+                rsiChart.subscribeCrosshairMove(param => {{
+                    try {{
+                        if (!param || !param.time) {{
+                            priceChart.clearCrosshairPosition();
+                        }} else {{
+                            priceChart.setCrosshairPosition(0, param.time, candleSeries);
+                        }}
+                    }} catch (e) {{}}
+                }});
+            }}
+
+            // Quick lookup maps for instant crosshair updates
+            const vwapMap = new Map(vwapData.map(d => [d.time, d.value]));
+            const ema9Map = new Map(ema9Data.map(d => [d.time, d.value]));
+            const ema21Map = new Map(ema21Data.map(d => [d.time, d.value]));
+            const rsiMap = new Map(rsiData.map(d => [d.time, d.value]));
+
             const ohlcText = document.getElementById('ohlc-text');
-            chart.subscribeCrosshairMove(param => {{
+            const vwapVal = document.getElementById('vwap-legend-val');
+            const ema9Val = document.getElementById('ema9-legend-val');
+            const ema21Val = document.getElementById('ema21-legend-val');
+            const rsiVal = document.getElementById('rsi-legend-val');
+
+            function setLegendValues(candle, t) {{
+                if (candle) {{
+                    ohlcText.innerText = `O: ${{candle.open.toFixed(2)}}  H: ${{candle.high.toFixed(2)}}  L: ${{candle.low.toFixed(2)}}  C: ${{candle.close.toFixed(2)}}`;
+                }}
+                if (vwapVal) {{
+                    const v = vwapMap.get(t);
+                    vwapVal.innerText = (v !== undefined) ? v.toFixed(2) : '-';
+                }}
+                if (ema9Val) {{
+                    const e9 = ema9Map.get(t);
+                    ema9Val.innerText = (e9 !== undefined) ? e9.toFixed(2) : '-';
+                }}
+                if (ema21Val) {{
+                    const e21 = ema21Map.get(t);
+                    ema21Val.innerText = (e21 !== undefined) ? e21.toFixed(2) : '-';
+                }}
+                if (rsiVal) {{
+                    const r = rsiMap.get(t);
+                    rsiVal.innerText = (r !== undefined) ? r.toFixed(1) : '-';
+                }}
+            }}
+
+            // Initial default legend values
+            if (candleData.length > 0) {{
+                const last = candleData[candleData.length - 1];
+                setLegendValues(last, last.time);
+            }}
+
+            priceChart.subscribeCrosshairMove(param => {{
                 if (!param || !param.time || !param.seriesData.get(candleSeries)) {{
-                    const last = candleData[candleData.length - 1];
-                    if (last) {{
-                        ohlcText.innerText = `O: ${{last.open.toFixed(2)}}  H: ${{last.high.toFixed(2)}}  L: ${{last.low.toFixed(2)}}  C: ${{last.close.toFixed(2)}}`;
+                    if (candleData.length > 0) {{
+                        const last = candleData[candleData.length - 1];
+                        setLegendValues(last, last.time);
                     }}
                     return;
                 }}
                 const c = param.seriesData.get(candleSeries);
-                ohlcText.innerText = `O: ${{c.open.toFixed(2)}}  H: ${{c.high.toFixed(2)}}  L: ${{c.low.toFixed(2)}}  C: ${{c.close.toFixed(2)}}`;
+                setLegendValues(c, param.time);
             }});
 
+            if (rsiChart && rsiSeries) {{
+                rsiChart.subscribeCrosshairMove(param => {{
+                    if (!param || !param.time) {{
+                        if (candleData.length > 0) {{
+                            const last = candleData[candleData.length - 1];
+                            setLegendValues(last, last.time);
+                        }}
+                        return;
+                    }}
+                    if (rsiVal) {{
+                        const r = rsiMap.get(param.time);
+                        rsiVal.innerText = (r !== undefined) ? r.toFixed(1) : '-';
+                    }}
+                }});
+            }}
+
             // Auto fit visible bars
-            chart.timeScale().fitContent();
+            priceChart.timeScale().fitContent();
+            if (rsiChart) {{
+                rsiChart.timeScale().fitContent();
+            }}
 
             // Responsive Resize
             window.addEventListener('resize', () => {{
-                chart.resize(container.clientWidth, container.clientHeight);
+                priceChart.resize(priceContainer.clientWidth, priceContainer.clientHeight);
+                if (rsiChart) {{
+                    const rsiContainer = document.getElementById('rsi-container');
+                    rsiChart.resize(rsiContainer.clientWidth, rsiContainer.clientHeight);
+                }}
             }});
         </script>
     </body>
@@ -606,11 +893,14 @@ def render_angel_one_smartapi_chart(
     show_cpr: bool = False,
     show_pdh_pdl: bool = False,
     show_trade_overlay: bool = False,
-    height: int = 480
+    show_vwap: bool = True,
+    show_ema: bool = True,
+    show_rsi: bool = True,
+    height: int = 500
 ):
     """
-    Renders pure, plain Angel One SmartAPI chart with optional automatic pattern drawings
-    using native TradingView Lightweight Charts engine.
+    Renders pure, plain Angel One SmartAPI chart with optional automatic pattern drawings,
+    intraday VWAP, EMA 9/21, and synchronized RSI indicator pane using native TradingView Lightweight Charts engine.
     """
     render_tradingview_confluence_chart(
         df=df,
@@ -622,6 +912,9 @@ def render_angel_one_smartapi_chart(
         show_cpr=show_cpr,
         show_pdh_pdl=show_pdh_pdl,
         show_trade_overlay=show_trade_overlay,
+        show_vwap=show_vwap,
+        show_ema=show_ema,
+        show_rsi=show_rsi,
         height=height
     )
 

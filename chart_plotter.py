@@ -29,6 +29,9 @@ class ChartPlotter:
         show_pdh_pdl: bool = True,
         show_fvg: bool = True,
         show_trade_overlay: bool = True,
+        show_vwap: bool = True,
+        show_ema: bool = True,
+        show_rsi: bool = True,
         height: int = 580,
         is_grid_compact: bool = False
     ) -> go.Figure:
@@ -95,7 +98,7 @@ class ChartPlotter:
         )
 
         # 3. Dynamic Moving Averages & VWAP (TradingView Colors)
-        if "vwap" in df.columns:
+        if show_vwap and "vwap" in df.columns:
             fig.add_trace(
                 go.Scatter(
                     x=x_vals, y=df["vwap"],
@@ -105,7 +108,7 @@ class ChartPlotter:
                 ),
                 secondary_y=False
             )
-        if "ema_9" in df.columns:
+        if show_ema and "ema_9" in df.columns:
             fig.add_trace(
                 go.Scatter(
                     x=x_vals, y=df["ema_9"],
@@ -115,7 +118,7 @@ class ChartPlotter:
                 ),
                 secondary_y=False
             )
-        if "ema_21" in df.columns:
+        if show_ema and "ema_21" in df.columns:
             fig.add_trace(
                 go.Scatter(
                     x=x_vals, y=df["ema_21"],
@@ -386,4 +389,43 @@ class ChartPlotter:
             secondary_y=False
         )
 
+        return fig
+
+    @classmethod
+    def create_rsi_chart(cls, df: pd.DataFrame, height: int = 160) -> go.Figure:
+        """Creates a synchronized RSI(14) indicator chart with 70/30/50 bands."""
+        fig = go.Figure()
+        if df.empty:
+            return fig
+        clean_df = df.copy()
+        if "rsi" not in clean_df.columns:
+            from indicator_engine import IndicatorEngine
+            try:
+                clean_df = IndicatorEngine.apply_all(clean_df)
+            except Exception:
+                pass
+        if "rsi" not in clean_df.columns:
+            return fig
+        x_vals = clean_df["datetime"] if "datetime" in clean_df.columns else clean_df.index
+        fig.add_trace(
+            go.Scatter(
+                x=x_vals, y=clean_df["rsi"],
+                mode="lines", name="RSI (14)",
+                line=dict(color="#AB47BC", width=1.5),
+                hoverinfo="name+y"
+            )
+        )
+        fig.add_hline(y=70, line_dash="dash", line_color="rgba(242, 54, 69, 0.6)", line_width=1)
+        fig.add_hline(y=50, line_dash="dot", line_color="rgba(120, 123, 134, 0.4)", line_width=1)
+        fig.add_hline(y=30, line_dash="dash", line_color="rgba(8, 153, 129, 0.6)", line_width=1)
+        fig.update_layout(
+            template="plotly_dark",
+            paper_bgcolor=cls.TV_BG,
+            plot_bgcolor=cls.TV_BG,
+            height=height,
+            margin=dict(l=15, r=65, t=10, b=15),
+            yaxis=dict(range=[10, 90], tickvals=[30, 50, 70], side="right"),
+            xaxis=dict(showgrid=True, gridcolor=cls.TV_GRID),
+            showlegend=False
+        )
         return fig

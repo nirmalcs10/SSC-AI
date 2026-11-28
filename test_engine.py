@@ -153,6 +153,7 @@ def run_tests():
     print(f"Verified: 5m line span = {span_5m_hrs:.1f} hrs (24hr session), 1h line span = {span_1h_hrs:.1f} hrs (1-week macro)!")
 
     from angel_chart_mirror import render_angel_one_smartapi_chart
+    from chart_plotter import ChartPlotter
     df_1h_test = plan.get("df_1h") if plan.get("df_1h") is not None else mtf_data.get("1h")
     assert df_1h_test is not None and not df_1h_test.empty, "df_1h must be generated and available"
     render_angel_one_smartapi_chart(
@@ -165,7 +166,10 @@ def run_tests():
         show_cpr=False,
         show_pdh_pdl=False,
         show_trade_overlay=False,
-        height=460
+        show_vwap=True,
+        show_ema=True,
+        show_rsi=True,
+        height=520
     )
     render_angel_one_smartapi_chart(
         df=df_1h_test,
@@ -177,9 +181,15 @@ def run_tests():
         show_cpr=False,
         show_pdh_pdl=False,
         show_trade_overlay=False,
-        height=460
+        show_vwap=True,
+        show_ema=True,
+        show_rsi=True,
+        height=520
     )
-    print("Verified Plain Angel One SmartAPI Feed with White Pattern Drawings (5m 24h & 1h 1-Week) generated cleanly!")
+    # Test ChartPlotter RSI chart parity
+    rsi_fig = ChartPlotter.create_rsi_chart(mtf_data["5m"])
+    assert rsi_fig is not None and len(rsi_fig.data) > 0, "ChartPlotter.create_rsi_chart must generate valid RSI figure"
+    print("Verified Plain Angel One SmartAPI Feed with VWAP, EMA 9/21, RSI sub-pane & White Pattern Drawings (5m 24h & 1h 1-Week) generated cleanly!")
 
     print("\n=== Step 4c: Testing Tamil Crypto School (TCS) Master Patterns Detection ===")
     import pandas as pd
