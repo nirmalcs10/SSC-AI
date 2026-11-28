@@ -416,21 +416,34 @@ if plan:
                 </div>
                 """, unsafe_allow_html=True)
 
-            # Auto-drawn pattern indicator badge
+            # Auto-drawn pattern indicator banner with Pattern Name & Confidence Level
             p_drawings = p_data.get("drawing_data")
             p_draw_name = p_data.get("drawing_pattern_name")
             span_tag = "Last 24 Hours" if tf_code == "5m" else "Last 1 Week"
+            regime = p_data.get("regime", "SIDE WAVE")
+            regime_score = p_data.get("regime_score", 85)
+            regime_color = p_data.get("regime_color", "#FFD600")
+
             if p_drawings and p_draw_name:
                 st.markdown(f"""
-                <div style="background: rgba(255, 255, 255, 0.05); border: 1px solid #FFFFFF; border-radius: 4px; padding: 5px 10px; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between;">
-                    <span style="font-size: 11px; font-weight: bold; color: #FFFFFF;">
-                        📐 Auto-Drawn White Lines ({span_tag}): <strong>{p_draw_name}</strong>
-                    </span>
-                    <span style="font-size: 10px; color: #8B949E;">TradingView Chart Overlay Active</span>
+                <div style="background: rgba(255, 255, 255, 0.04); border: 1px solid #FFFFFF; border-radius: 6px; padding: 7px 12px; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px;">
+                    <div>
+                        <span style="font-size: 13px; font-weight: bold; color: #FFFFFF;">
+                            📐 Pattern: <strong>{p_draw_name}</strong> <span style="font-size: 11px; color: #8B949E;">({span_tag})</span>
+                        </span>
+                    </div>
+                    <div style="display: flex; gap: 8px; align-items: center;">
+                        <span style="background: rgba(255, 255, 255, 0.1); border: 1px solid #FFFFFF; color: #FFFFFF; font-weight: bold; font-size: 11px; padding: 2px 8px; border-radius: 4px;">
+                            ⚡ Confidence: {regime_score}%
+                        </span>
+                        <span style="background: {regime_color}22; border: 1px solid {regime_color}; color: {regime_color}; font-weight: bold; font-size: 11px; padding: 2px 8px; border-radius: 4px;">
+                            {regime}
+                        </span>
+                    </div>
                 </div>
                 """, unsafe_allow_html=True)
 
-            # Embedded TradingView Chart with Auto-Drawn Pattern (No Support, Resistance, CPR or Trade Overlays)
+            # Embedded TradingView Chart with Patterns, S/R Levels, and Trade Overlays
             if chart_df is not None and not chart_df.empty:
                 render_angel_one_smartapi_chart(
                     df=chart_df,
@@ -438,10 +451,10 @@ if plan:
                     interval=tf_code,
                     trade_plan=plan,
                     pattern_drawings=p_drawings,
-                    show_sr=False,
-                    show_cpr=False,
-                    show_pdh_pdl=False,
-                    show_trade_overlay=False,
+                    show_sr=show_sr,
+                    show_cpr=show_cpr,
+                    show_pdh_pdl=show_pdh_pdl,
+                    show_trade_overlay=show_trade_overlay,
                     height=460
                 )
 

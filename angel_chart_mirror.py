@@ -160,7 +160,7 @@ def render_tradingview_confluence_chart(
                     "lineWidth": 2,
                     "lineStyle": 2,  # Dashed
                     "axisLabelVisible": True,
-                    "title": f"TARGET 1 (1:1.5): ₹{t1_p:,.1f}"
+                    "title": f"TARGET 1 (1:2.0): ₹{t1_p:,.1f}"
                 })
             if t2_p > 0:
                 price_lines.append({
@@ -169,7 +169,7 @@ def render_tradingview_confluence_chart(
                     "lineWidth": 2,
                     "lineStyle": 2,  # Dashed
                     "axisLabelVisible": True,
-                    "title": f"TARGET 2 (1:2.5): ₹{t2_p:,.1f}"
+                    "title": f"TARGET 2 (1:3.0): ₹{t2_p:,.1f}"
                 })
             if t3_p > 0:
                 price_lines.append({
@@ -270,30 +270,53 @@ def render_tradingview_confluence_chart(
                 })
 
         # 4. Support & Resistance Zones
-        if show_sr and "sr_zones" in trade_plan and trade_plan["sr_zones"]:
-            sr = trade_plan["sr_zones"]
-            for r in sr.get("resistances", [])[:2]:
-                lvl = float(r.get("level", 0.0))
-                if lvl > 0:
-                    price_lines.append({
-                        "price": lvl,
-                        "color": "#EF5350",
-                        "lineWidth": 1,
-                        "lineStyle": 1,
-                        "axisLabelVisible": True,
-                        "title": f"RES: ₹{lvl:,.1f}"
-                    })
-            for s in sr.get("supports", [])[:2]:
-                lvl = float(s.get("level", 0.0))
-                if lvl > 0:
-                    price_lines.append({
-                        "price": lvl,
-                        "color": "#26A69A",
-                        "lineWidth": 1,
-                        "lineStyle": 1,
-                        "axisLabelVisible": True,
-                        "title": f"SUPP: ₹{lvl:,.1f}"
-                    })
+        if show_sr:
+            if "sr_zones" in trade_plan and trade_plan["sr_zones"]:
+                sr = trade_plan["sr_zones"]
+                for r in sr.get("resistances", [])[:2]:
+                    lvl = float(r.get("level", 0.0))
+                    if lvl > 0:
+                        price_lines.append({
+                            "price": lvl,
+                            "color": "#EF5350",
+                            "lineWidth": 1,
+                            "lineStyle": 1,
+                            "axisLabelVisible": True,
+                            "title": f"RES: ₹{lvl:,.1f}"
+                        })
+                for s in sr.get("supports", [])[:2]:
+                    lvl = float(s.get("level", 0.0))
+                    if lvl > 0:
+                        price_lines.append({
+                            "price": lvl,
+                            "color": "#26A69A",
+                            "lineWidth": 1,
+                            "lineStyle": 1,
+                            "axisLabelVisible": True,
+                            "title": f"SUPP: ₹{lvl:,.1f}"
+                        })
+
+            # Institutional Option Chain Support & Resistance Walls
+            put_supp = float(trade_plan.get("put_support_strike", 0.0))
+            call_res = float(trade_plan.get("call_resistance_strike", 0.0))
+            if put_supp > 0:
+                price_lines.append({
+                    "price": put_supp,
+                    "color": "#00E676",
+                    "lineWidth": 1,
+                    "lineStyle": 2,  # Dashed
+                    "axisLabelVisible": True,
+                    "title": f"OI Put Support: ₹{put_supp:,.0f}"
+                })
+            if call_res > 0:
+                price_lines.append({
+                    "price": call_res,
+                    "color": "#FF1744",
+                    "lineWidth": 1,
+                    "lineStyle": 2,  # Dashed
+                    "axisLabelVisible": True,
+                    "title": f"OI Call Resistance: ₹{call_res:,.0f}"
+                })
 
     # Process Automatic Pattern Drawings (Geometry Lines, Necklines & Markers)
     pattern_lines: List[Dict[str, Any]] = []
