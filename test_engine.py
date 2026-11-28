@@ -288,6 +288,20 @@ def run_tests():
     assert wedge_res["drawing_data"]["lines"][0]["color"] == "#FFFFFF"
     print(f"Verified TCS Pattern: {wedge_res['pattern_name']} -> Lines All White #FFFFFF")
 
+    print("\n=== Step 4d: Testing engine.pattern_detector.PatternDetector (5m & 1h Prediction) ===")
+    from engine.pattern_detector import PatternDetector
+    pred_res = PatternDetector.predict_5m_and_1h(df_5m=df_tt.iloc[:21], df_1h=df_flip)
+    assert "5m" in pred_res and "1h" in pred_res
+    assert pred_res["5m"]["predicted_direction"] == "BUY"
+    assert pred_res["1h"]["predicted_direction"] == "BUY"
+    assert pred_res["macro_alignment"] == "CONFLUENT BULLISH (5m + 1h Alignment)"
+    assert pred_res["overall_predicted_direction"] == "BUY"
+    assert pred_res["5m"]["drawing_data"]["lines"][0]["color"] == "#FFFFFF"
+    assert pred_res["1h"]["drawing_data"]["lines"][0]["color"] == "#FFFFFF"
+    print(f"Verified PatternDetector 5m Prediction: {pred_res['5m']['predicted_pattern']} ({pred_res['5m']['predicted_direction']}) | Conf: {pred_res['5m']['confidence']}%")
+    print(f"Verified PatternDetector 1h Prediction: {pred_res['1h']['predicted_pattern']} ({pred_res['1h']['predicted_direction']}) | Conf: {pred_res['1h']['confidence']}%")
+    print(f"Verified Confluent Multi-Timeframe Alignment: {pred_res['macro_alignment']} -> Action: {pred_res['recommended_action']}")
+
     print("\n=== Step 5: Testing Institutional Risk Management Guard (Pillar 4) ===")
     test_wallet_file = Path(__file__).resolve().parent / "data" / "test_risk_wallet_final.json"
     test_trades_file = Path(__file__).resolve().parent / "data" / "test_risk_trades_final.json"

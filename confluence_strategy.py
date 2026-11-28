@@ -35,7 +35,7 @@ from config import (
 )
 from indicator_engine import IndicatorEngine
 from level_detector import LevelDetector
-from pattern_engine import PatternEngine
+from engine.pattern_detector import PatternDetector as PatternEngine
 
 
 class ConfluenceStrategy:
